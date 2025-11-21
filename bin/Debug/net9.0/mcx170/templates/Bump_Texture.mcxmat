@@ -1,0 +1,6 @@
+<MaterialTemplateUser>
+  <Name>Bump Texture</Name>
+  <Properties>
+    <BumpTexture>[DIFFUSETEXTURE]_[BUMP_SUFFIX].[EXT]</BumpTexture>
+  </Properties>
+</MaterialTemplateUser>

@@ -1,23 +1,23 @@
 {
   "format": 1,
   "restore": {
-    "C:\\Users\\User\\Documents\\Aviation\\protoscone\\protoscone.csproj": {}
+    "C:\\Users\\sriem\\Documents\\Aviation\\protoscone\\protoscone.csproj": {}
   },
   "projects": {
-    "C:\\Users\\User\\Documents\\Aviation\\protoscone\\protoscone.csproj": {
+    "C:\\Users\\sriem\\Documents\\Aviation\\protoscone\\protoscone.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "C:\\Users\\User\\Documents\\Aviation\\protoscone\\protoscone.csproj",
+        "projectUniqueName": "C:\\Users\\sriem\\Documents\\Aviation\\protoscone\\protoscone.csproj",
         "projectName": "protoscone",
-        "projectPath": "C:\\Users\\User\\Documents\\Aviation\\protoscone\\protoscone.csproj",
-        "packagesPath": "C:\\Users\\User\\.nuget\\packages\\",
-        "outputPath": "C:\\Users\\User\\Documents\\Aviation\\protoscone\\obj\\",
+        "projectPath": "C:\\Users\\sriem\\Documents\\Aviation\\protoscone\\protoscone.csproj",
+        "packagesPath": "C:\\Users\\sriem\\.nuget\\packages\\",
+        "outputPath": "C:\\Users\\sriem\\Documents\\Aviation\\protoscone\\obj\\",
         "projectStyle": "PackageReference",
         "fallbackFolders": [
           "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"
         ],
         "configFilePaths": [
-          "C:\\Users\\User\\AppData\\Roaming\\NuGet\\NuGet.Config",
+          "C:\\Users\\sriem\\AppData\\Roaming\\NuGet\\NuGet.Config",
           "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.FallbackLocation.config",
           "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.Offline.config"
         ],
@@ -26,6 +26,7 @@
         ],
         "sources": {
           "C:\\Program Files (x86)\\Microsoft SDKs\\NuGetPackages\\": {},
+          "C:\\Program Files\\dotnet\\library-packs": {},
           "https://api.nuget.org/v3/index.json": {}
         },
         "frameworks": {
@@ -44,11 +45,25 @@
           "auditLevel": "low",
           "auditMode": "direct"
         },
-        "SdkAnalysisLevel": "9.0.300"
+        "SdkAnalysisLevel": "10.0.100"
       },
       "frameworks": {
         "net9.0": {
           "targetAlias": "net9.0",
+          "dependencies": {
+            "HtmlAgilityPack": {
+              "target": "Package",
+              "version": "[1.12.4, )"
+            },
+            "Newtonsoft.Json": {
+              "target": "Package",
+              "version": "[13.0.4, )"
+            },
+            "SharpGLTF.Core": {
+              "target": "Package",
+              "version": "[1.0.5, )"
+            }
+          },
           "imports": [
             "net461",
             "net462",
@@ -65,7 +80,7 @@
               "privateAssets": "all"
             }
           },
-          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\9.0.305/PortableRuntimeIdentifierGraph.json"
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\10.0.100/PortableRuntimeIdentifierGraph.json"
         }
       }
     }

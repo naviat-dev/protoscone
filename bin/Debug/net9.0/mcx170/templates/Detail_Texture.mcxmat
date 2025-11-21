@@ -1,0 +1,6 @@
+<MaterialTemplateUser>
+  <Name>Detail Texture</Name>
+  <Properties>
+    <DetailTexture>[DIFFUSETEXTURE]_[DETAIL_SUFFIX].[EXT]</DetailTexture>
+  </Properties>
+</MaterialTemplateUser>

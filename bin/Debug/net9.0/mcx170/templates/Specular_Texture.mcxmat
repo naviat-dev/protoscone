@@ -1,0 +1,6 @@
+<MaterialTemplateUser>
+  <Name>Specular Texture</Name>
+  <Properties>
+    <SpecularTexture>[DIFFUSETEXTURE]_[SPECULAR_SUFFIX].[EXT]</SpecularTexture>
+  </Properties>
+</MaterialTemplateUser>

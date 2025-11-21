@@ -1,0 +1,6 @@
+<MaterialTemplateUser>
+  <Name>Fresnel Texture</Name>
+  <Properties>
+    <FresnelTexture>[DIFFUSETEXTURE]_[FRESNEL_SUFFIX].[EXT]</FresnelTexture>
+  </Properties>
+</MaterialTemplateUser>
