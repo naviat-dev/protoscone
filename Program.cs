@@ -264,6 +264,50 @@ foreach (string file in allBglFiles)
 								extras?.Parent?.Remove();
 							}
 
+							// The game plan for the conversion here:
+
+							// DONE: Sort by byte offset → ensures you process buffers sequentially, which makes the mapping easier.
+							// DONE: Group accessors by shared buffer → perfect, avoids double-conversion of shared slices.
+							// Determine type from one accessor → works because GLTF guarantees all accessors referencing the same buffer slice are compatible with the intended interpretation.
+							// Convert binary data and update byte lengths → this is exactly what you need; make sure to also track new offsets inside your temporary binary array.
+							// Update accessors → adjust byteOffset, count, and any other relevant properties in JSON to point to the new buffer location.
+							// Append to temporary JSON → then repeat for all buffers.
+							JArray bufferViews = (JArray?)json["bufferViews"] ?? [];
+							JArray sortedBufferViews = new(bufferViews.OrderBy(bv => (int?)bv["byteOffset"] ?? 0));
+							List<byte> tempBinData = [];
+							for (int k = 0; k < sortedBufferViews.Count; k++)
+							{
+								JToken bufferView = sortedBufferViews[k];
+								int bvByteOffset = (int)(bufferView["byteOffset"] ?? 0);
+								int bvByteLength = (int)(bufferView["byteLength"] ?? 0);
+								int bvByteStride = (int)(bufferView["byteStride"] ?? 0);
+								// Find all accessors that reference this bufferView
+								List<JToken> accessors = ((JArray?)json["accessors"])?.Where(a => (int?)a["bufferView"] == k).OrderBy(a => (int?)a["byteOffset"] ?? 0).ToList() ?? [];
+								if (accessors.Count > 1)
+								{
+									Console.WriteLine($"BufferView at index {k} is shared by {accessors.Count} accessors.");
+								}
+								else
+								{
+									Console.WriteLine($"BufferView at index {k} is used by 1 accessor.");
+								}
+								foreach (JToken accessor in accessors)
+								{
+									int accByteOffset = (int)(accessor["byteOffset"] ?? 0);
+									int accCount = (int)(accessor["count"] ?? 0);
+									string accType = (string)(accessor["type"] ?? "SCALAR");
+									int accComponentType = (int)(accessor["componentType"] ?? 5126); // Default to FLOAT
+									int componentSize = ComponentSize(accComponentType);
+									int componentCount = ComponentCount(accType);
+									int totalAccByteLength = accCount * componentSize * componentCount;
+								}
+								byte[] bvData = glbBinBytesPre[bvByteOffset..(bvByteOffset + bvByteLength)];
+								int newOffset = tempBinData.Count;
+								tempBinData.AddRange(bvData);
+								// Update bufferView byteOffset to new location
+								bufferView["byteOffset"] = newOffset;
+							}
+
 							File.WriteAllBytes(Path.Combine(args[0], $"{name}.glb"), [.. glbBytesPre]);
 						}
 					}
@@ -341,14 +385,6 @@ static int ComponentCount(string type)
 		"VEC4" => 4,
 		_ => throw new Exception("Unsupported type")
 	};
-}
-
-static sbyte ReadSByte(byte[] binArr, int off) => unchecked((sbyte)binArr[off]);
-static short ReadInt16(byte[] binArr, int off) => (short)(binArr[off] | (binArr[off + 1] << 8));
-static ushort ReadUInt16(byte[] binArr, int off) => (ushort)(binArr[off] | (binArr[off + 1] << 8));
-static float ReadFloat(byte[] binArr, int off)
-{
-	return BitConverter.ToSingle(binArr, off); // BitConverter uses system endianness; glb is little-endian on most machines.
 }
 
 enum Flags
