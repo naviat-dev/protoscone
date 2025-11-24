@@ -1,1 +1,0 @@
-<MaterialTemplateUser>  <Name>Set Default Opaque</Name>  <Properties>    <AlphaTestFunction>Never</AlphaTestFunction>    <AlphaTestThreshold>0</AlphaTestThreshold>	<ZTestAlpha>False</ZTestAlpha>	<DestinationBlend>Zero</DestinationBlend>	<SourceBlend>One</SourceBlend>	<ZWriteAlpha>False</ZWriteAlpha>	<RenderMode>Opaque</RenderMode>  </Properties></MaterialTemplateUser>

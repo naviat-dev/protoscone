@@ -1,6 +1,0 @@
-<MaterialTemplateUser>
-  <Name>PBR Composite Texture</Name>
-  <Properties>
-    <MetalSmoothAOTexture>[DIFFUSETEXTURE]_[PBR_SUFFIX].[EXT]</MetalSmoothAOTexture>
-  </Properties>
-</MaterialTemplateUser>

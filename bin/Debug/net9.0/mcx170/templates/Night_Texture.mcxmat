@@ -1,7 +1,0 @@
-<MaterialTemplateUser>
-  <Name>Night Texture</Name>
-  <Properties>
-    <EmissiveTexture>[DIFFUSETEXTURE]_[EMISSIVE_SUFFIX].[EXT]</EmissiveTexture>
-    <EmissiveMode>AdditiveNightOnly</EmissiveMode>
-  </Properties>
-</MaterialTemplateUser>
