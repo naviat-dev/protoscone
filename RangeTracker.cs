@@ -13,7 +13,7 @@ public class RangeTracker
 			=> $"[{Start}, {End})";
 	}
 
-	private readonly List<Range> _ranges = new();
+	private readonly List<Range> _ranges = [];
 
 	/// <summary>
 	/// Record an allocated region [start, end).

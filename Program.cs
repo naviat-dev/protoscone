@@ -7,7 +7,8 @@ using Newtonsoft.Json.Linq;
 if (args.Length != 2)
 {
 	Console.WriteLine("Invalid number of arguments. Usage: protoscone.exe [path/to/input] [path/to/output]");
-	return;
+	// return;
+	args = ["C:\\Users\\sriem\\Documents\\Aviation\\all-scenery", "C:\\Users\\sriem\\Downloads"];
 }
 
 // Display the provided arguments
@@ -264,50 +265,161 @@ foreach (string file in allBglFiles)
 								extras?.Parent?.Remove();
 							}
 
-							// The game plan for the conversion here:
-
-							// DONE: Sort by byte offset → ensures you process buffers sequentially, which makes the mapping easier.
-							// DONE: Group accessors by shared buffer → perfect, avoids double-conversion of shared slices.
-							// Determine type from one accessor → works because GLTF guarantees all accessors referencing the same buffer slice are compatible with the intended interpretation.
-							// Convert binary data and update byte lengths → this is exactly what you need; make sure to also track new offsets inside your temporary binary array.
-							// Update accessors → adjust byteOffset, count, and any other relevant properties in JSON to point to the new buffer location.
-							// Append to temporary JSON → then repeat for all buffers.
+							// 1. Load and sort bufferViews *BUT* keep track of old→new index mapping
 							JArray bufferViews = (JArray?)json["bufferViews"] ?? [];
-							JArray sortedBufferViews = new(bufferViews.OrderBy(bv => (int?)bv["byteOffset"] ?? 0));
-							List<byte> tempBinData = [];
+							List<JObject> originalBufferViews = [.. bufferViews.Cast<JObject>()];
+
+							// Sort by byteOffset (missing offsets sorted as 0)
+							List<(JObject bv, int originalIndex)> sorted = [.. originalBufferViews
+								.Select((bv, i) => (bv, originalIndex: i))
+								.OrderBy(x => (long?)x.bv["byteOffset"] ?? 0)];
+
+							// Map new → old indices
+							Dictionary<int, int> bufferViewIndexMap = sorted
+								.Select((x, newIndex) => new { x.originalIndex, newIndex })
+								.ToDictionary(x => x.newIndex, x => x.originalIndex);
+
+							// Replace JSON array with *sorted* buffered views
+							JArray sortedBufferViews = [];
+							foreach (var (bv, originalIndex) in sorted)
+								sortedBufferViews.Add(bv);
+
+							// 2. Pre-group accessors by ORIGINAL bufferView index
+							JArray accessors = (JArray?)json["accessors"] ?? [];
+
+							Dictionary<int, List<JObject>> accessorsByOriginalView = accessors
+								.Cast<JObject>()
+								.Where(a => a["bufferView"] != null)
+								.GroupBy(a => (int)a["bufferView"]!)
+								.ToDictionary(g => g.Key,
+											  g => g.OrderBy(a => (long?)a["byteOffset"] ?? 0).ToList());
+
+							// 3. Update accessors to refer to NEW bufferView indices
+							foreach (var accessor in accessors.Cast<JObject>())
+							{
+								if (accessor["bufferView"] != null)
+								{
+									int oldIndex = (int)accessor["bufferView"]!;
+									accessor["bufferView"] = bufferViewIndexMap[oldIndex];
+								}
+							}
+
+							// 4. Now operate sequentially over *sorted* bufferViews
+							List<byte> tempBin = [];
 							for (int k = 0; k < sortedBufferViews.Count; k++)
 							{
 								JToken bufferView = sortedBufferViews[k];
-								int bvByteOffset = (int)(bufferView["byteOffset"] ?? 0);
+								int originalIndex = bufferViewIndexMap[k];
+								long bvByteOffset = (long)(bufferView["byteOffset"] ?? 0);
 								int bvByteLength = (int)(bufferView["byteLength"] ?? 0);
 								int bvByteStride = (int)(bufferView["byteStride"] ?? 0);
+
 								// Find all accessors that reference this bufferView
-								List<JToken> accessors = ((JArray?)json["accessors"])?.Where(a => (int?)a["bufferView"] == k).OrderBy(a => (int?)a["byteOffset"] ?? 0).ToList() ?? [];
-								if (accessors.Count > 1)
+								if (!accessorsByOriginalView.TryGetValue(originalIndex, out var accessorsForView))
 								{
-									Console.WriteLine($"BufferView at index {k} is shared by {accessors.Count} accessors.");
+									accessorsForView = [];
+								}
+
+								if (accessorsForView.Count > 1)
+								{
+									Console.WriteLine($"BufferView at index {k} is shared by {accessorsForView.Count} accessors.");
 								}
 								else
 								{
-									Console.WriteLine($"BufferView at index {k} is used by 1 accessor.");
+									Console.WriteLine($"BufferView at index {k} is used by {accessorsForView.Count} accessor.");
 								}
-								foreach (JToken accessor in accessors)
+								foreach (JToken accessor in accessorsForView)
 								{
+									int originalAccIndex = ((JArray?)json["accessors"])?.IndexOf(accessor) ?? -1;
+									if (originalAccIndex == -1)
+									{
+										Console.WriteLine("Could not find accessor index.");
+										continue;
+									}
 									int accByteOffset = (int)(accessor["byteOffset"] ?? 0);
 									int accCount = (int)(accessor["count"] ?? 0);
-									string accType = (string)(accessor["type"] ?? "SCALAR");
+									string accType = (string?)accessor["type"] ?? "SCALAR";
 									int accComponentType = (int)(accessor["componentType"] ?? 5126); // Default to FLOAT
 									int componentSize = ComponentSize(accComponentType);
 									int componentCount = ComponentCount(accType);
 									int totalAccByteLength = accCount * componentSize * componentCount;
+
+									// If the accessor is a COLOR_n, NORMAL, TANGENT or TEXCOORD_n, resize it appropriately
+									string accessorRole = "";
+									// Access every attribute of every primitive of every mesh
+									JArray? meshes = (JArray?)json["meshes"];
+									if (meshes != null)
+									{
+										foreach (JToken mesh in meshes)
+										{
+											JArray? primitives = (JArray?)mesh["primitives"];
+											if (primitives != null)
+											{
+												foreach (JToken primitive in primitives)
+												{
+													JObject? attributes = (JObject?)primitive["attributes"];
+													if (attributes != null)
+													{
+														foreach (var attribute in attributes)
+														{
+															string attrName = attribute.Key;
+															int attrAccessorIndex = (int?)attribute.Value ?? -1;
+															if (attrAccessorIndex == originalAccIndex)
+															{
+																accessorRole = attrName;
+																Console.WriteLine($"Resolved accessor name: {accessorRole}");
+																break;
+															}
+														}
+													}
+													if (!string.IsNullOrEmpty(accessorRole))
+													{
+														break;
+													}
+												}
+											}
+											if (!string.IsNullOrEmpty(accessorRole))
+											{
+												break;
+											}
+										}
+									}
+									switch (accessorRole)
+									{
+										case var r when TexcoordRegex().IsMatch(r):
+											// convert UVs
+											break;
+
+										case var r when ColorRegex().IsMatch(r):
+											// convert colors
+											break;
+
+										case "NORMAL":
+											// convert normal
+											break;
+
+										case "TANGENT":
+											// convert tangent
+											break;
+
+										case var r when r.StartsWith("WEIGHTS_"):
+											// convert weights
+											break;
+
+										case "POSITION":
+										case "INDICES":
+										case "JOINTS_0":
+										default:
+											// just copy raw bytes
+											break;
+									}
 								}
-								byte[] bvData = glbBinBytesPre[bvByteOffset..(bvByteOffset + bvByteLength)];
-								int newOffset = tempBinData.Count;
-								tempBinData.AddRange(bvData);
+								byte[] bvData = glbBinBytesPre[(int)bvByteOffset..((int)bvByteOffset + bvByteLength)];
+								int newOffset = tempBin.Count;
+								tempBin.AddRange(bvData);
 								// Update bufferView byteOffset to new location
 								bufferView["byteOffset"] = newOffset;
 							}
-
 							File.WriteAllBytes(Path.Combine(args[0], $"{name}.glb"), [.. glbBytesPre]);
 						}
 					}
@@ -435,4 +547,13 @@ struct ModelData
 	public byte[] modelBytes;
 	public List<LodData> lods;
 	public List<string> textures;
+}
+
+partial class Program
+{
+	[System.Text.RegularExpressions.GeneratedRegex(@"^TEXCOORD_\d+$")]
+	private static partial System.Text.RegularExpressions.Regex TexcoordRegex();
+
+	[System.Text.RegularExpressions.GeneratedRegex(@"^COLOR_\d+$")]
+	private static partial System.Text.RegularExpressions.Regex ColorRegex();
 }
