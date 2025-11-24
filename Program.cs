@@ -2,6 +2,7 @@
 using System.Xml;
 using SharpGLTF.Schema2;
 using Newtonsoft.Json.Linq;
+using protoscone;
 
 // Argument validation and processing
 if (args.Length != 2)
@@ -266,8 +267,7 @@ foreach (string file in allBglFiles)
 							}
 
 							// 1. Load and sort bufferViews *BUT* keep track of old→new index mapping
-							JArray bufferViews = (JArray?)json["bufferViews"] ?? [];
-							List<JObject> originalBufferViews = [.. bufferViews.Cast<JObject>()];
+							List<JObject> originalBufferViews = [.. ((JArray?)json["bufferViews"] ?? []).Cast<JObject>()];
 
 							// Sort by byteOffset (missing offsets sorted as 0)
 							List<(JObject bv, int originalIndex)> sorted = [.. originalBufferViews
@@ -295,7 +295,7 @@ foreach (string file in allBglFiles)
 											  g => g.OrderBy(a => (long?)a["byteOffset"] ?? 0).ToList());
 
 							// 3. Update accessors to refer to NEW bufferView indices
-							foreach (var accessor in accessors.Cast<JObject>())
+							foreach (JObject accessor in accessors.Cast<JObject>())
 							{
 								if (accessor["bufferView"] != null)
 								{
@@ -304,18 +304,20 @@ foreach (string file in allBglFiles)
 								}
 							}
 
+							List<byte> newBinData = [];
 							// 4. Now operate sequentially over *sorted* bufferViews
-							List<byte> tempBin = [];
 							for (int k = 0; k < sortedBufferViews.Count; k++)
 							{
+								List<byte> tempBvBin = [];
 								JToken bufferView = sortedBufferViews[k];
 								int originalIndex = bufferViewIndexMap[k];
+								JObject originalBufferView = originalBufferViews[originalIndex];
 								long bvByteOffset = (long)(bufferView["byteOffset"] ?? 0);
 								int bvByteLength = (int)(bufferView["byteLength"] ?? 0);
 								int bvByteStride = (int)(bufferView["byteStride"] ?? 0);
 
 								// Find all accessors that reference this bufferView
-								if (!accessorsByOriginalView.TryGetValue(originalIndex, out var accessorsForView))
+								if (!accessorsByOriginalView.TryGetValue(originalIndex, out List<JObject>? accessorsForView))
 								{
 									accessorsForView = [];
 								}
@@ -328,14 +330,17 @@ foreach (string file in allBglFiles)
 								{
 									Console.WriteLine($"BufferView at index {k} is used by {accessorsForView.Count} accessor.");
 								}
-								foreach (JToken accessor in accessorsForView)
+								for (int l = 0; l < accessorsForView.Count; l++)
 								{
+									List<byte> tempAccBin = [];
+									JObject accessor = accessorsForView[l];
 									int originalAccIndex = ((JArray?)json["accessors"])?.IndexOf(accessor) ?? -1;
 									if (originalAccIndex == -1)
 									{
 										Console.WriteLine("Could not find accessor index.");
 										continue;
 									}
+									JObject? originalAccessor = (JObject?)json["accessors"]?[originalAccIndex];
 									int accByteOffset = (int)(accessor["byteOffset"] ?? 0);
 									int accCount = (int)(accessor["count"] ?? 0);
 									string accType = (string?)accessor["type"] ?? "SCALAR";
@@ -360,14 +365,13 @@ foreach (string file in allBglFiles)
 													JObject? attributes = (JObject?)primitive["attributes"];
 													if (attributes != null)
 													{
-														foreach (var attribute in attributes)
+														foreach (JProperty attribute in attributes.Properties())
 														{
-															string attrName = attribute.Key;
+															string attrName = attribute.Name;
 															int attrAccessorIndex = (int?)attribute.Value ?? -1;
 															if (attrAccessorIndex == originalAccIndex)
 															{
 																accessorRole = attrName;
-																Console.WriteLine($"Resolved accessor name: {accessorRole}");
 																break;
 															}
 														}
@@ -384,43 +388,159 @@ foreach (string file in allBglFiles)
 											}
 										}
 									}
-									switch (accessorRole)
+									if (accessorRole != "POSITION")
 									{
-										case var r when TexcoordRegex().IsMatch(r):
-											// convert UVs
-											break;
-
-										case var r when ColorRegex().IsMatch(r):
-											// convert colors
-											break;
-
-										case "NORMAL":
-											// convert normal
-											break;
-
-										case "TANGENT":
-											// convert tangent
-											break;
-
-										case var r when r.StartsWith("WEIGHTS_"):
-											// convert weights
-											break;
-
-										case "POSITION":
-										case "INDICES":
-										case "JOINTS_0":
-										default:
-											// just copy raw bytes
-											break;
+										if (originalAccessor?["min"] != null)
+										{
+											originalAccessor?.Remove("min");
+										}
+										if (originalAccessor?["max"] != null)
+										{
+											originalAccessor?.Remove("max");
+										}
 									}
+									byte[] currentAccBytes = glbBinBytesPre[(int)(bvByteOffset + accByteOffset)..(int)(bvByteOffset + accByteOffset + totalAccByteLength)];
+									if (accessorRole == "")
+									{
+										continue;
+									}
+									else if (TexcoordRegex().IsMatch(accessorRole) || ColorRegex().IsMatch(accessorRole))
+									{
+										// These just need to be normalized, so no binary changes needed
+										originalAccessor["normalized"] = true;
+										originalAccessor["componentType"] = 5123; // UNSIGNED_SHORT
+										if (tempBvBin.Count != 0)
+										{
+											originalAccessor["byteOffset"] = tempBvBin.Count;
+										}
+										tempAccBin.AddRange(currentAccBytes);
+									}
+									else if (accessorRole == "NORMAL")
+									{
+										originalAccessor["componentType"] = 5126; // FLOAT
+										originalAccessor["type"] = "VEC3";
+										float[] normals = new float[accCount * 3];
+										for (int m = 0; m < accCount; m++)
+										{
+											int baseIndex = m * 4;
+											int actualIndex = m * 3;
+											// Store packed bytes and w as unsigned byte
+											normals[actualIndex + 0] = (sbyte)currentAccBytes[baseIndex + 0];
+											normals[actualIndex + 1] = (sbyte)currentAccBytes[baseIndex + 1];
+											normals[actualIndex + 2] = (sbyte)currentAccBytes[baseIndex + 2];
+										}
+										// convert normal
+										if (tempBvBin.Count != 0)
+										{
+											originalAccessor["byteOffset"] = tempBvBin.Count;
+										}
+										foreach (float f in normals)
+										{
+											byte[] bytes = BitConverter.GetBytes(f);
+											tempAccBin.AddRange(bytes);
+										}
+									}
+									else if (accessorRole == "TANGENT")
+									{
+										originalAccessor["componentType"] = 5126; // FLOAT
+										float[] tangents = new float[accCount * 4];
+										for (int m = 0; m < accCount; m++)
+										{
+											int baseIndex = m * 4;
+											// Store packed bytes and w as unsigned byte
+											tangents[baseIndex + 0] = (sbyte)currentAccBytes[baseIndex + 0];
+											tangents[baseIndex + 1] = (sbyte)currentAccBytes[baseIndex + 1];
+											tangents[baseIndex + 2] = (sbyte)currentAccBytes[baseIndex + 2];
+											tangents[baseIndex + 3] = (sbyte)currentAccBytes[baseIndex + 3];
+										}
+										// convert tangent
+										if (tempBvBin.Count != 0)
+										{
+											originalAccessor["byteOffset"] = tempBvBin.Count;
+										}
+										foreach (float f in tangents)
+										{
+											byte[] bytes = BitConverter.GetBytes(f);
+											tempAccBin.AddRange(bytes);
+										}
+									}
+									else if (accessorRole == "POSITION")
+									{
+										float[] min = [float.MaxValue, float.MaxValue, float.MaxValue];
+										float[] max = [float.MinValue, float.MinValue, float.MinValue];
+										for (int m = 0; m < accCount; m++)
+										{
+											int baseIndex = m * 12;
+											// Decode 3-component 16-bit signed normalized integer to float
+											float x = BitConverter.ToSingle(currentAccBytes, baseIndex + 0);
+											float y = BitConverter.ToSingle(currentAccBytes, baseIndex + 4);
+											float z = BitConverter.ToSingle(currentAccBytes, baseIndex + 8);
+											if (x < min[0]) min[0] = x;
+											else if (y < min[1]) min[1] = y;
+											else if (z < min[2]) min[2] = z;
+											else if (x > max[0]) max[0] = x;
+											else if (y > max[1]) max[1] = y;
+											else if (z > max[2]) max[2] = z;
+										}
+										originalAccessor["min"] = new JArray(min);
+										originalAccessor["max"] = new JArray(max);
+										// convert position
+										if (tempBvBin.Count != 0)
+										{
+											originalAccessor["byteOffset"] = tempBvBin.Count;
+										}
+										tempAccBin.AddRange(currentAccBytes);
+									}
+									else
+									{
+										// just copy raw bytes
+										if (tempBvBin.Count != 0)
+										{
+											originalAccessor["byteOffset"] = tempBvBin.Count;
+										}
+										tempAccBin.AddRange(currentAccBytes);
+									}
+									tempBvBin.AddRange(tempAccBin);
 								}
-								byte[] bvData = glbBinBytesPre[(int)bvByteOffset..((int)bvByteOffset + bvByteLength)];
-								int newOffset = tempBin.Count;
-								tempBin.AddRange(bvData);
-								// Update bufferView byteOffset to new location
-								bufferView["byteOffset"] = newOffset;
+								originalBufferView["byteLength"] = tempBvBin.Count;
+								if (newBinData.Count != 0)
+								{
+									originalBufferView["byteOffset"] = newBinData.Count;
+								}
+								newBinData.AddRange(tempBvBin);
 							}
-							File.WriteAllBytes(Path.Combine(args[0], $"{name}.glb"), [.. glbBytesPre]);
+
+							// Build BIN padded (0x00)
+							byte[] outBin = [.. newBinData];
+							int binPad = (4 - (outBin.Length % 4)) % 4;
+							byte[] outBinPadded = new byte[outBin.Length + binPad];
+							Array.Copy(outBin, outBinPadded, outBin.Length);
+							json["buffers"][0]["byteLength"] = outBinPadded.Length;
+
+							// Build JSON text and pad with spaces (0x20)
+							string outJson = json.ToString(Newtonsoft.Json.Formatting.None);
+							byte[] outJsonBytes = Encoding.UTF8.GetBytes(outJson);
+							int jsonPad = (4 - (outJsonBytes.Length % 4)) % 4;
+							byte[] outJsonPadded = new byte[outJsonBytes.Length + jsonPad];
+							Array.Copy(outJsonBytes, outJsonPadded, outJsonBytes.Length);
+							for (int p = 0; p < jsonPad; p++) outJsonPadded[outJsonBytes.Length + p] = 0x20;
+							// padding bytes are zero by default
+
+							// final GLB assemble
+							int totalLength = 12 + 8 + outJsonPadded.Length + 8 + outBinPadded.Length;
+							List<byte> outGlb = [];
+							outGlb.AddRange(Encoding.ASCII.GetBytes("glTF")); // magic
+							outGlb.AddRange(BitConverter.GetBytes(2)); // version
+							outGlb.AddRange(BitConverter.GetBytes(totalLength));
+							// JSON chunk
+							outGlb.AddRange(BitConverter.GetBytes(outJsonPadded.Length));
+							outGlb.AddRange(Encoding.ASCII.GetBytes("JSON"));
+							outGlb.AddRange(outJsonPadded);
+							// BIN chunk
+							outGlb.AddRange(BitConverter.GetBytes(outBinPadded.Length));
+							outGlb.AddRange(Encoding.ASCII.GetBytes("BIN\0"));
+							outGlb.AddRange(outBinPadded);
+							File.WriteAllBytes(Path.Combine(args[0], $"{name}.glb"), [.. outGlb]);
 						}
 					}
 				}
