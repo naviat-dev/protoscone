@@ -40,6 +40,51 @@
             "related": ".xml"
           }
         }
+      },
+      "SharpGLTF.Core/1.0.5": {
+        "type": "package",
+        "compile": {
+          "lib/net8.0/SharpGLTF.Core.dll": {
+            "related": ".xml"
+          }
+        },
+        "runtime": {
+          "lib/net8.0/SharpGLTF.Core.dll": {
+            "related": ".xml"
+          }
+        }
+      },
+      "SharpGLTF.Runtime/1.0.5": {
+        "type": "package",
+        "dependencies": {
+          "SharpGLTF.Core": "1.0.5"
+        },
+        "compile": {
+          "lib/net8.0/SharpGLTF.Runtime.dll": {
+            "related": ".xml"
+          }
+        },
+        "runtime": {
+          "lib/net8.0/SharpGLTF.Runtime.dll": {
+            "related": ".xml"
+          }
+        }
+      },
+      "SharpGLTF.Toolkit/1.0.5": {
+        "type": "package",
+        "dependencies": {
+          "SharpGLTF.Runtime": "1.0.5"
+        },
+        "compile": {
+          "lib/net8.0/SharpGLTF.Toolkit.dll": {
+            "related": ".xml"
+          }
+        },
+        "runtime": {
+          "lib/net8.0/SharpGLTF.Toolkit.dll": {
+            "related": ".xml"
+          }
+        }
       }
     }
   },
@@ -155,12 +200,73 @@
         "newtonsoft.json.nuspec",
         "packageIcon.png"
       ]
+    },
+    "SharpGLTF.Core/1.0.5": {
+      "sha512": "HNHKPqaHXm7R1nlXZ764K5UI02IeDOQ5DQKLjwYUVNTsSW27jJpw+wLGQx6ZFoiFYqUlyZjmsu+WfEak2GmJAg==",
+      "type": "package",
+      "path": "sharpgltf.core/1.0.5",
+      "files": [
+        ".nupkg.metadata",
+        ".signature.p7s",
+        "glTF2Sharp.png",
+        "lib/net6.0/SharpGLTF.Core.dll",
+        "lib/net6.0/SharpGLTF.Core.xml",
+        "lib/net8.0/SharpGLTF.Core.dll",
+        "lib/net8.0/SharpGLTF.Core.xml",
+        "lib/netstandard2.0/SharpGLTF.Core.dll",
+        "lib/netstandard2.0/SharpGLTF.Core.xml",
+        "lib/netstandard2.1/SharpGLTF.Core.dll",
+        "lib/netstandard2.1/SharpGLTF.Core.xml",
+        "sharpgltf.core.1.0.5.nupkg.sha512",
+        "sharpgltf.core.nuspec"
+      ]
+    },
+    "SharpGLTF.Runtime/1.0.5": {
+      "sha512": "EVP32k4LqERxSVICiupT8xQvhHSHJCiXajBjNpqdfdajtREHayuVhH0Jmk6uSjTLX8/IIH9XfT34sw3TwvCziw==",
+      "type": "package",
+      "path": "sharpgltf.runtime/1.0.5",
+      "files": [
+        ".nupkg.metadata",
+        ".signature.p7s",
+        "glTF2Sharp.png",
+        "lib/net6.0/SharpGLTF.Runtime.dll",
+        "lib/net6.0/SharpGLTF.Runtime.xml",
+        "lib/net8.0/SharpGLTF.Runtime.dll",
+        "lib/net8.0/SharpGLTF.Runtime.xml",
+        "lib/netstandard2.0/SharpGLTF.Runtime.dll",
+        "lib/netstandard2.0/SharpGLTF.Runtime.xml",
+        "lib/netstandard2.1/SharpGLTF.Runtime.dll",
+        "lib/netstandard2.1/SharpGLTF.Runtime.xml",
+        "sharpgltf.runtime.1.0.5.nupkg.sha512",
+        "sharpgltf.runtime.nuspec"
+      ]
+    },
+    "SharpGLTF.Toolkit/1.0.5": {
+      "sha512": "piQKk7PH2pSWQSQmCSd8cYPaDtAy/ppAD+Mrh2RUhhHI8awl81HqqLyAauwQhJwea3LNaiJ6f4ehZuOGk89TlA==",
+      "type": "package",
+      "path": "sharpgltf.toolkit/1.0.5",
+      "files": [
+        ".nupkg.metadata",
+        ".signature.p7s",
+        "glTF2Sharp.png",
+        "lib/net6.0/SharpGLTF.Toolkit.dll",
+        "lib/net6.0/SharpGLTF.Toolkit.xml",
+        "lib/net8.0/SharpGLTF.Toolkit.dll",
+        "lib/net8.0/SharpGLTF.Toolkit.xml",
+        "lib/netstandard2.0/SharpGLTF.Toolkit.dll",
+        "lib/netstandard2.0/SharpGLTF.Toolkit.xml",
+        "lib/netstandard2.1/SharpGLTF.Toolkit.dll",
+        "lib/netstandard2.1/SharpGLTF.Toolkit.xml",
+        "sharpgltf.toolkit.1.0.5.nupkg.sha512",
+        "sharpgltf.toolkit.nuspec"
+      ]
     }
   },
   "projectFileDependencyGroups": {
     "net9.0": [
       "NetGltf2 >= 1.0.1",
-      "Newtonsoft.Json >= 13.0.4"
+      "Newtonsoft.Json >= 13.0.4",
+      "SharpGLTF.Toolkit >= 1.0.5"
     ]
   },
   "packageFolders": {
@@ -221,6 +327,10 @@
           "Newtonsoft.Json": {
             "target": "Package",
             "version": "[13.0.4, )"
+          },
+          "SharpGLTF.Toolkit": {
+            "target": "Package",
+            "version": "[1.0.5, )"
           }
         },
         "imports": [

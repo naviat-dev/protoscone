@@ -21,9 +21,7 @@ C:\Users\sriem\Documents\Aviation\protoscone\bin\Debug\net9.0\protoscone.deps.js
 C:\Users\sriem\Documents\Aviation\protoscone\bin\Debug\net9.0\protoscone.runtimeconfig.json
 C:\Users\sriem\Documents\Aviation\protoscone\bin\Debug\net9.0\protoscone.dll
 C:\Users\sriem\Documents\Aviation\protoscone\bin\Debug\net9.0\protoscone.pdb
-C:\Users\sriem\Documents\Aviation\protoscone\bin\Debug\net9.0\HtmlAgilityPack.dll
 C:\Users\sriem\Documents\Aviation\protoscone\bin\Debug\net9.0\Newtonsoft.Json.dll
-C:\Users\sriem\Documents\Aviation\protoscone\bin\Debug\net9.0\SharpGLTF.Core.dll
 C:\Users\sriem\Documents\Aviation\protoscone\obj\Debug\net9.0\protoscone.csproj.AssemblyReference.cache
 C:\Users\sriem\Documents\Aviation\protoscone\obj\Debug\net9.0\protoscone.GeneratedMSBuildEditorConfig.editorconfig
 C:\Users\sriem\Documents\Aviation\protoscone\obj\Debug\net9.0\protoscone.AssemblyInfoInputs.cache
@@ -36,3 +34,4 @@ C:\Users\sriem\Documents\Aviation\protoscone\obj\Debug\net9.0\refint\protoscone.
 C:\Users\sriem\Documents\Aviation\protoscone\obj\Debug\net9.0\protoscone.pdb
 C:\Users\sriem\Documents\Aviation\protoscone\obj\Debug\net9.0\protoscone.genruntimeconfig.cache
 C:\Users\sriem\Documents\Aviation\protoscone\obj\Debug\net9.0\ref\protoscone.dll
+C:\Users\sriem\Documents\Aviation\protoscone\bin\Debug\net9.0\NetGltf.dll
