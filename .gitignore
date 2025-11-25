@@ -1,0 +1,61 @@
+# Build outputs
+bin/
+obj/
+
+# Configuration and IDE artifacts
+.vs/
+.vscode/
+*.suo
+*.user
+*.userosscache
+*.sln.ide
+
+# Logs and temp
+*.log
+logs/
+Temp/
+**/protoscone.sourcelink.json
+
+# Test results and coverage
+TestResults/
+coverage/
+*.coverage
+*.coveragexml
+
+# NuGet and packages
+packages/
+*.nupkg
+*.snupkg
+**/project.lock.json
+*.nuget.props
+*.nuget.targets
+
+# Generated files by SDK
+**/*.GeneratedMSBuildEditorConfig.editorconfig
+**/GlobalUsings.g.cs
+**/ref/
+**/refint/
+**/*.g.cs
+
+# Runtime configs and deps (build folders already ignored)
+*.runtimeconfig.json
+*.deps.json
+
+# Rider/JetBrains
+.idea/
+*.iml
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# MSBuild intermediate state
+*.Cache
+*.db
+*.mdb
+*.pdb
+
+# Additional build configurations
+Debug/
+Release/
+dist/
