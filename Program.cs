@@ -1,6 +1,5 @@
 ﻿using System.Text;
 using System.Xml;
-using NetGltf;
 
 // Argument validation and processing
 if (args.Length != 2)
@@ -34,7 +33,7 @@ if (!Directory.Exists(tempPath))
 
 string[] allBglFiles = Directory.GetFiles(args[0], "*.bgl", SearchOption.AllDirectories);
 Console.WriteLine($"Found files:\n{string.Join(",\n", allBglFiles)}");
-List<LibraryObject> libraryObjects = [];
+Dictionary<UInt128, List<LibraryObject>> libraryObjects = [];
 List<ModelData> modelDatas = [];
 foreach (string file in allBglFiles)
 {
@@ -43,7 +42,7 @@ foreach (string file in allBglFiles)
 
 	// Read and validate BGL header
 	byte[] magicNumber1 = br.ReadBytes(4);
-	br.BaseStream.Seek(0x10, SeekOrigin.Begin);
+	_ = br.BaseStream.Seek(0x10, SeekOrigin.Begin);
 	byte[] magicNumber2 = br.ReadBytes(4);
 	if (!magicNumber1.SequenceEqual(new byte[] { 0x01, 0x02, 0x92, 0x19 }) ||
 		!magicNumber2.SequenceEqual(new byte[] { 0x03, 0x18, 0x05, 0x08 }))
@@ -51,105 +50,35 @@ foreach (string file in allBglFiles)
 		Console.WriteLine("Invalid BGL header");
 		return;
 	}
-	br.BaseStream.Seek(0x14, SeekOrigin.Begin);
+	_ = br.BaseStream.Seek(0x14, SeekOrigin.Begin);
 	uint recordCt = br.ReadUInt32();
 
 	// Skip 0x38-byte header
-	br.BaseStream.Seek(0x38, SeekOrigin.Begin);
+	_ = br.BaseStream.Seek(0x38, SeekOrigin.Begin);
 
-	int foundSceneryObj = 0;
 	int foundMdlData = 0;
+	int foundSceneryObj = 0;
 
-	List<int> sceneryObjectOffsets = [];
 	List<int> mdlDataOffsets = [];
+	List<int> sceneryObjectOffsets = [];
 	for (int i = 0; i < recordCt; i++)
 	{
 		long recordStartPos = br.BaseStream.Position;
 		uint recType = br.ReadUInt32();
-		br.BaseStream.Seek(recordStartPos + 0x0C, SeekOrigin.Begin);
+		_ = br.BaseStream.Seek(recordStartPos + 0x0C, SeekOrigin.Begin);
 		uint startSubsection = br.ReadUInt32();
-		br.BaseStream.Seek(recordStartPos + 0x10, SeekOrigin.Begin);
+		_ = br.BaseStream.Seek(recordStartPos + 0x10, SeekOrigin.Begin);
 		uint recSize = br.ReadUInt32();
-		if (recType == 0x0025) // SceneryObject
-		{
-			foundSceneryObj++;
-			sceneryObjectOffsets.Add((int)startSubsection);
-			Console.WriteLine($"Found SceneryObject at offset 0x{startSubsection:X}, total found: {foundSceneryObj}");
-		}
-		else if (recType == 0x002B) // ModelData
+		if (recType == 0x002B) // ModelData
 		{
 			foundMdlData++;
 			mdlDataOffsets.Add((int)startSubsection);
 		}
-	}
-
-	// Parse SceneryObject subrecords
-	List<(int offset, int size)> sceneryObjectSubrecords = [];
-	foreach (int sceneryOffset in sceneryObjectOffsets)
-	{
-		br.BaseStream.Seek(sceneryOffset + 4, SeekOrigin.Begin);
-		int subrecCount = br.ReadInt32();
-		int subrecOffset = br.ReadInt32();
-		int size = br.ReadInt32();
-		Console.WriteLine($"SceneryObject Subrecord Count: {subrecCount}, Offset: 0x{subrecOffset:X}, Size: {size}");
-		sceneryObjectSubrecords.Add((subrecOffset, size));
-	}
-
-	int bytesRead = 0;
-	foreach ((int subOffset, int subSize) in sceneryObjectSubrecords)
-	{
-		while (bytesRead < subSize)
+		else if (recType == 0x0025) // SceneryObject
 		{
-			br.BaseStream.Seek(subOffset + bytesRead, SeekOrigin.Begin);
-			ushort id = br.ReadUInt16(), size = br.ReadUInt16();
-			if (id != 0xB) // LibraryObject
-			{
-				Console.WriteLine($"Unexpected subrecord type at offset 0x{subOffset + bytesRead:X}: 0x{id:X4}, skipping {size} bytes");
-				br.BaseStream.Seek(subOffset + size, SeekOrigin.Begin);
-				bytesRead += size;
-				continue;
-			}
-			uint longitude = br.ReadUInt32(), latitude = br.ReadUInt32();
-			short altitude = br.ReadInt16();
-			byte[] flagsBytes = br.ReadBytes(6);
-			List<Flags> flagsList = [];
-			for (int j = 0; j < flagsBytes.Length && j < 7; j++)
-			{
-				if (flagsBytes[j] != 0)
-				{
-					flagsList.Add((Flags)j);
-				}
-			}
-			Flags[] flags = [.. flagsList];
-			ushort pitch = br.ReadUInt16();
-			ushort bank = br.ReadUInt16();
-			ushort heading = br.ReadUInt16();
-			short imageComplexity = br.ReadInt16();
-			br.BaseStream.Seek(2, SeekOrigin.Current); // There is an unknown 2-byte field here
-			byte[] guidEmptyBytes = br.ReadBytes(16);
-			UInt128 guidEmpty = new(BitConverter.ToUInt64(guidEmptyBytes, 8), BitConverter.ToUInt64(guidEmptyBytes, 0));
-			byte[] guidBytes = br.ReadBytes(16);
-			UInt128 guid = new(BitConverter.ToUInt64(guidBytes, 8), BitConverter.ToUInt64(guidBytes, 0));
-			float scale = br.ReadSingle();
-			LibraryObject libObj = new()
-			{
-				id = id,
-				size = size,
-				longitude = (longitude * (360.0 / 805306368.0)) - 180.0,
-				latitude = 90.0 - (latitude * (180.0 / 536870912.0)),
-				altitude = altitude,
-				flags = flags,
-				pitch = pitch * (360.0 / 65536.0),
-				bank = bank * (360.0 / 65536.0),
-				heading = heading * (360.0 / 65536.0),
-				imageComplexity = imageComplexity,
-				guidEmpty = guidEmpty,
-				guid = guid,
-				scale = scale
-			};
-			libraryObjects.Add(libObj);
-			Console.WriteLine($"{libObj.guid:X4}\t{libObj.size}\t{libObj.longitude:F6}\t{libObj.latitude:F6}\t{libObj.altitude}\t[{string.Join(",", libObj.flags)}]\t{libObj.pitch:F2}\t{libObj.bank:F2}\t{libObj.heading:F2}\t{libObj.imageComplexity}\t{libObj.scale:F3}");
-			bytesRead += size;
+			foundSceneryObj++;
+			sceneryObjectOffsets.Add((int)startSubsection);
+			Console.WriteLine($"Found SceneryObject at offset 0x{startSubsection:X}, total found: {foundSceneryObj}");
 		}
 	}
 
@@ -157,25 +86,25 @@ foreach (string file in allBglFiles)
 	List<(int offset, int size)> modelDataSubrecords = [];
 	foreach (int modelDataOffset in mdlDataOffsets)
 	{
-		br.BaseStream.Seek(modelDataOffset + 4, SeekOrigin.Begin);
+		_ = br.BaseStream.Seek(modelDataOffset + 4, SeekOrigin.Begin);
 		int subrecCount = br.ReadInt32();
 		int subrecOffset = br.ReadInt32();
 		int size = br.ReadInt32();
 		modelDataSubrecords.Add((subrecOffset, size));
 	}
 
-	bytesRead = 0;
+	int bytesRead = 0;
 	int objectsRead = 0;
 	foreach ((int subOffset, int subSize) in modelDataSubrecords)
 	{
 		while (bytesRead < subSize)
 		{
-			br.BaseStream.Seek(subOffset + (24 * objectsRead), SeekOrigin.Begin);
+			_ = br.BaseStream.Seek(subOffset + (24 * objectsRead), SeekOrigin.Begin);
 			byte[] guidBytes = br.ReadBytes(16);
 			UInt128 guid = new(BitConverter.ToUInt64(guidBytes, 8), BitConverter.ToUInt64(guidBytes, 0));
 			uint startModelDataOffset = br.ReadUInt32();
 			uint modelDataSize = br.ReadUInt32();
-			br.BaseStream.Seek(subOffset + startModelDataOffset, SeekOrigin.Begin);
+			_ = br.BaseStream.Seek(subOffset + startModelDataOffset, SeekOrigin.Begin);
 			byte[] mdlBytes = br.ReadBytes((int)modelDataSize);
 			string name = $"{guid:X}";
 			List<LodData> lods = [];
@@ -239,22 +168,101 @@ foreach (string file in allBglFiles)
 			{
 				guid = guid,
 				name = name,
-				modelBytes = mdlBytes,
 				lods = lods
 			});
 			bytesRead += (int)modelDataSize + 24;
 			objectsRead++;
 		}
 	}
+
+	// Parse SceneryObject subrecords
+	List<(int offset, int size)> sceneryObjectSubrecords = [];
+	foreach (int sceneryOffset in sceneryObjectOffsets)
+	{
+		_ = br.BaseStream.Seek(sceneryOffset + 4, SeekOrigin.Begin);
+		int subrecCount = br.ReadInt32();
+		int subrecOffset = br.ReadInt32();
+		int size = br.ReadInt32();
+		Console.WriteLine($"SceneryObject Subrecord Count: {subrecCount}, Offset: 0x{subrecOffset:X}, Size: {size}");
+		sceneryObjectSubrecords.Add((subrecOffset, size));
+	}
+
+	bytesRead = 0;
+	foreach ((int subOffset, int subSize) in sceneryObjectSubrecords)
+	{
+		while (bytesRead < subSize)
+		{
+			_ = br.BaseStream.Seek(subOffset + bytesRead, SeekOrigin.Begin);
+			ushort id = br.ReadUInt16(), size = br.ReadUInt16();
+			if (id != 0xB) // LibraryObject
+			{
+				Console.WriteLine($"Unexpected subrecord type at offset 0x{subOffset + bytesRead:X}: 0x{id:X4}, skipping {size} bytes");
+				_ = br.BaseStream.Seek(subOffset + size, SeekOrigin.Begin);
+				bytesRead += size;
+				continue;
+			}
+			uint longitude = br.ReadUInt32(), latitude = br.ReadUInt32();
+			short altitude = br.ReadInt16();
+			byte[] flagsBytes = br.ReadBytes(6);
+			List<Flags> flagsList = [];
+			for (int j = 0; j < flagsBytes.Length && j < 7; j++)
+			{
+				if (flagsBytes[j] != 0)
+				{
+					flagsList.Add((Flags)j);
+				}
+			}
+			Flags[] flags = [.. flagsList];
+			ushort pitch = br.ReadUInt16();
+			ushort bank = br.ReadUInt16();
+			ushort heading = br.ReadUInt16();
+			short imageComplexity = br.ReadInt16();
+			_ = br.BaseStream.Seek(2, SeekOrigin.Current); // There is an unknown 2-byte field here
+			byte[] guidEmptyBytes = br.ReadBytes(16);
+			UInt128 guidEmpty = new(BitConverter.ToUInt64(guidEmptyBytes, 8), BitConverter.ToUInt64(guidEmptyBytes, 0));
+			byte[] guidBytes = br.ReadBytes(16);
+			UInt128 guid = new(BitConverter.ToUInt64(guidBytes, 8), BitConverter.ToUInt64(guidBytes, 0));
+			float scale = br.ReadSingle();
+			LibraryObject libObj = new()
+			{
+				id = id,
+				size = size,
+				longitude = (longitude * (360.0 / 805306368.0)) - 180.0,
+				latitude = 90.0 - (latitude * (180.0 / 536870912.0)),
+				altitude = altitude,
+				flags = flags,
+				pitch = pitch * (360.0 / 65536.0),
+				bank = bank * (360.0 / 65536.0),
+				heading = heading * (360.0 / 65536.0),
+				imageComplexity = imageComplexity,
+				guidEmpty = guidEmpty,
+				guid = guid,
+				scale = scale
+			};
+			libraryObjects[guid].Add(libObj);
+			// Console.WriteLine($"{libObj.guid:X4}\t{libObj.size}\t{libObj.longitude:F6}\t{libObj.latitude:F6}\t{libObj.altitude}\t[{string.Join(",", libObj.flags)}]\t{libObj.pitch:F2}\t{libObj.bank:F2}\t{libObj.heading:F2}\t{libObj.imageComplexity}\t{libObj.scale:F3}");
+			bytesRead += size;
+		}
+	}
 }
 Console.WriteLine($"Total LibraryObjects parsed: {libraryObjects.Count}. Total ModelDatas parsed: {modelDatas.Count}.");
 
-HashSet<string> processedModels = [];
-int index = 1;
-Console.WriteLine($"Processing object {index} of {libraryObjects.Count}");
-foreach (LibraryObject element in libraryObjects)
+// We are more likely to have LibraryObjects that don't have corresponding ModelData than vice versa, so iterate over modelDatas
+// Group this by the index of the tile to remove duplicates and simpler writing later
+Dictionary<int, string> modelDatasByTile = [];
+foreach (ModelData modelData in modelDatas)
 {
-
+	if (libraryObjects.TryGetValue(modelData.guid, out List<LibraryObject>? value))
+	{
+		foreach (LibraryObject libObj in value)
+		{
+			int tileIndex = GetTileIndex(libObj.latitude, libObj.longitude);
+			if (!modelDatasByTile.ContainsKey(tileIndex))
+			{
+				modelDatasByTile[tileIndex] = modelData.name;
+			}
+		}
+	}
 }
 
 int GetTileIndex(double lat, double lon)
@@ -354,9 +362,9 @@ struct ModelData
 {
 	public UInt128 guid;
 	public string name;
-	public byte[] modelBytes;
 	public List<LodData> lods;
 	public List<string> textures;
+	public Dictionary<int, int> scales;
 }
 
 partial class Program

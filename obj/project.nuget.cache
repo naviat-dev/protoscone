@@ -1,11 +1,9 @@
 {
   "version": 2,
-  "dgSpecHash": "zlRsV8Bw3h0=",
+  "dgSpecHash": "yR29UZ4qqFA=",
   "success": true,
   "projectFilePath": "C:\\Users\\sriem\\Documents\\Aviation\\protoscone\\protoscone.csproj",
   "expectedPackageFiles": [
-    "C:\\Users\\sriem\\.nuget\\packages\\microsoft.csharp\\4.7.0\\microsoft.csharp.4.7.0.nupkg.sha512",
-    "C:\\Users\\sriem\\.nuget\\packages\\netgltf2\\1.0.1\\netgltf2.1.0.1.nupkg.sha512",
     "C:\\Users\\sriem\\.nuget\\packages\\newtonsoft.json\\13.0.4\\newtonsoft.json.13.0.4.nupkg.sha512",
     "C:\\Users\\sriem\\.nuget\\packages\\sharpgltf.core\\1.0.5\\sharpgltf.core.1.0.5.nupkg.sha512",
     "C:\\Users\\sriem\\.nuget\\packages\\sharpgltf.runtime\\1.0.5\\sharpgltf.runtime.1.0.5.nupkg.sha512",
