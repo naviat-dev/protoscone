@@ -2,16 +2,29 @@
   "version": 3,
   "targets": {
     "net9.0": {
-      "HtmlAgilityPack/1.12.4": {
+      "Microsoft.CSharp/4.7.0": {
         "type": "package",
         "compile": {
-          "lib/net7.0/HtmlAgilityPack.dll": {
-            "related": ".deps.json;.pdb;.xml"
+          "ref/netcoreapp2.0/_._": {}
+        },
+        "runtime": {
+          "lib/netcoreapp2.0/_._": {}
+        }
+      },
+      "NetGltf2/1.0.1": {
+        "type": "package",
+        "dependencies": {
+          "Microsoft.CSharp": "4.7.0",
+          "NewtonSoft.Json": "13.0.2"
+        },
+        "compile": {
+          "lib/netstandard2.0/NetGltf.dll": {
+            "related": ".xml"
           }
         },
         "runtime": {
-          "lib/net7.0/HtmlAgilityPack.dll": {
-            "related": ".deps.json;.pdb;.xml"
+          "lib/netstandard2.0/NetGltf.dll": {
+            "related": ".xml"
           }
         }
       },
@@ -27,66 +40,90 @@
             "related": ".xml"
           }
         }
-      },
-      "SharpGLTF.Core/1.0.5": {
-        "type": "package",
-        "compile": {
-          "lib/net8.0/SharpGLTF.Core.dll": {
-            "related": ".xml"
-          }
-        },
-        "runtime": {
-          "lib/net8.0/SharpGLTF.Core.dll": {
-            "related": ".xml"
-          }
-        }
       }
     }
   },
   "libraries": {
-    "HtmlAgilityPack/1.12.4": {
-      "sha512": "ljqvBabvFwKoLniuoQKO8b5bJfJweKLs4fUNS/V5dsvpo0A8MlJqxxn9XVmP2DaskbUXty6IYaWAi1SArGIMeQ==",
+    "Microsoft.CSharp/4.7.0": {
+      "sha512": "pTj+D3uJWyN3My70i2Hqo+OXixq3Os2D1nJ2x92FFo6sk8fYS1m1WLNTs0Dc1uPaViH0YvEEwvzddQ7y4rhXmA==",
       "type": "package",
-      "path": "htmlagilitypack/1.12.4",
+      "path": "microsoft.csharp/4.7.0",
       "files": [
         ".nupkg.metadata",
         ".signature.p7s",
-        "htmlagilitypack.1.12.4.nupkg.sha512",
-        "htmlagilitypack.nuspec",
-        "lib/Net35/HtmlAgilityPack.dll",
-        "lib/Net35/HtmlAgilityPack.pdb",
-        "lib/Net35/HtmlAgilityPack.xml",
-        "lib/Net40-client/HtmlAgilityPack.dll",
-        "lib/Net40-client/HtmlAgilityPack.pdb",
-        "lib/Net40-client/HtmlAgilityPack.xml",
-        "lib/Net40/HtmlAgilityPack.XML",
-        "lib/Net40/HtmlAgilityPack.dll",
-        "lib/Net40/HtmlAgilityPack.pdb",
-        "lib/Net45/HtmlAgilityPack.XML",
-        "lib/Net45/HtmlAgilityPack.dll",
-        "lib/Net45/HtmlAgilityPack.pdb",
-        "lib/NetCore45/HtmlAgilityPack.XML",
-        "lib/NetCore45/HtmlAgilityPack.dll",
-        "lib/NetCore45/HtmlAgilityPack.pdb",
-        "lib/net7.0/HtmlAgilityPack.deps.json",
-        "lib/net7.0/HtmlAgilityPack.dll",
-        "lib/net7.0/HtmlAgilityPack.pdb",
-        "lib/net7.0/HtmlAgilityPack.xml",
-        "lib/netstandard2.0/HtmlAgilityPack.deps.json",
-        "lib/netstandard2.0/HtmlAgilityPack.dll",
-        "lib/netstandard2.0/HtmlAgilityPack.pdb",
-        "lib/netstandard2.0/HtmlAgilityPack.xml",
-        "lib/portable-net45+netcore45+wp8+MonoAndroid+MonoTouch/HtmlAgilityPack.XML",
-        "lib/portable-net45+netcore45+wp8+MonoAndroid+MonoTouch/HtmlAgilityPack.dll",
-        "lib/portable-net45+netcore45+wp8+MonoAndroid+MonoTouch/HtmlAgilityPack.pdb",
-        "lib/portable-net45+netcore45+wpa81+wp8+MonoAndroid+MonoTouch/HtmlAgilityPack.XML",
-        "lib/portable-net45+netcore45+wpa81+wp8+MonoAndroid+MonoTouch/HtmlAgilityPack.dll",
-        "lib/portable-net45+netcore45+wpa81+wp8+MonoAndroid+MonoTouch/HtmlAgilityPack.pdb",
-        "lib/uap10.0/HtmlAgilityPack.XML",
-        "lib/uap10.0/HtmlAgilityPack.dll",
-        "lib/uap10.0/HtmlAgilityPack.pdb",
-        "lib/uap10.0/HtmlAgilityPack.pri",
-        "readme.md"
+        "LICENSE.TXT",
+        "THIRD-PARTY-NOTICES.TXT",
+        "lib/MonoAndroid10/_._",
+        "lib/MonoTouch10/_._",
+        "lib/net45/_._",
+        "lib/netcore50/Microsoft.CSharp.dll",
+        "lib/netcoreapp2.0/_._",
+        "lib/netstandard1.3/Microsoft.CSharp.dll",
+        "lib/netstandard2.0/Microsoft.CSharp.dll",
+        "lib/netstandard2.0/Microsoft.CSharp.xml",
+        "lib/portable-net45+win8+wp8+wpa81/_._",
+        "lib/uap10.0.16299/_._",
+        "lib/win8/_._",
+        "lib/wp80/_._",
+        "lib/wpa81/_._",
+        "lib/xamarinios10/_._",
+        "lib/xamarinmac20/_._",
+        "lib/xamarintvos10/_._",
+        "lib/xamarinwatchos10/_._",
+        "microsoft.csharp.4.7.0.nupkg.sha512",
+        "microsoft.csharp.nuspec",
+        "ref/MonoAndroid10/_._",
+        "ref/MonoTouch10/_._",
+        "ref/net45/_._",
+        "ref/netcore50/Microsoft.CSharp.dll",
+        "ref/netcore50/Microsoft.CSharp.xml",
+        "ref/netcore50/de/Microsoft.CSharp.xml",
+        "ref/netcore50/es/Microsoft.CSharp.xml",
+        "ref/netcore50/fr/Microsoft.CSharp.xml",
+        "ref/netcore50/it/Microsoft.CSharp.xml",
+        "ref/netcore50/ja/Microsoft.CSharp.xml",
+        "ref/netcore50/ko/Microsoft.CSharp.xml",
+        "ref/netcore50/ru/Microsoft.CSharp.xml",
+        "ref/netcore50/zh-hans/Microsoft.CSharp.xml",
+        "ref/netcore50/zh-hant/Microsoft.CSharp.xml",
+        "ref/netcoreapp2.0/_._",
+        "ref/netstandard1.0/Microsoft.CSharp.dll",
+        "ref/netstandard1.0/Microsoft.CSharp.xml",
+        "ref/netstandard1.0/de/Microsoft.CSharp.xml",
+        "ref/netstandard1.0/es/Microsoft.CSharp.xml",
+        "ref/netstandard1.0/fr/Microsoft.CSharp.xml",
+        "ref/netstandard1.0/it/Microsoft.CSharp.xml",
+        "ref/netstandard1.0/ja/Microsoft.CSharp.xml",
+        "ref/netstandard1.0/ko/Microsoft.CSharp.xml",
+        "ref/netstandard1.0/ru/Microsoft.CSharp.xml",
+        "ref/netstandard1.0/zh-hans/Microsoft.CSharp.xml",
+        "ref/netstandard1.0/zh-hant/Microsoft.CSharp.xml",
+        "ref/netstandard2.0/Microsoft.CSharp.dll",
+        "ref/netstandard2.0/Microsoft.CSharp.xml",
+        "ref/portable-net45+win8+wp8+wpa81/_._",
+        "ref/uap10.0.16299/_._",
+        "ref/win8/_._",
+        "ref/wp80/_._",
+        "ref/wpa81/_._",
+        "ref/xamarinios10/_._",
+        "ref/xamarinmac20/_._",
+        "ref/xamarintvos10/_._",
+        "ref/xamarinwatchos10/_._",
+        "useSharedDesignerContext.txt",
+        "version.txt"
+      ]
+    },
+    "NetGltf2/1.0.1": {
+      "sha512": "HOxz7uv5dDrljkC6/Pdj+XzrkDYIIjsx0Y1ZPNbaydc7wPBgkwYmwJ6k7OLBIxc9wduxD9EW377QlfA/0unzFA==",
+      "type": "package",
+      "path": "netgltf2/1.0.1",
+      "files": [
+        ".nupkg.metadata",
+        ".signature.p7s",
+        "lib/netstandard2.0/NetGltf.dll",
+        "lib/netstandard2.0/NetGltf.xml",
+        "netgltf2.1.0.1.nupkg.sha512",
+        "netgltf2.nuspec"
       ]
     },
     "Newtonsoft.Json/13.0.4": {
@@ -118,33 +155,12 @@
         "newtonsoft.json.nuspec",
         "packageIcon.png"
       ]
-    },
-    "SharpGLTF.Core/1.0.5": {
-      "sha512": "HNHKPqaHXm7R1nlXZ764K5UI02IeDOQ5DQKLjwYUVNTsSW27jJpw+wLGQx6ZFoiFYqUlyZjmsu+WfEak2GmJAg==",
-      "type": "package",
-      "path": "sharpgltf.core/1.0.5",
-      "files": [
-        ".nupkg.metadata",
-        ".signature.p7s",
-        "glTF2Sharp.png",
-        "lib/net6.0/SharpGLTF.Core.dll",
-        "lib/net6.0/SharpGLTF.Core.xml",
-        "lib/net8.0/SharpGLTF.Core.dll",
-        "lib/net8.0/SharpGLTF.Core.xml",
-        "lib/netstandard2.0/SharpGLTF.Core.dll",
-        "lib/netstandard2.0/SharpGLTF.Core.xml",
-        "lib/netstandard2.1/SharpGLTF.Core.dll",
-        "lib/netstandard2.1/SharpGLTF.Core.xml",
-        "sharpgltf.core.1.0.5.nupkg.sha512",
-        "sharpgltf.core.nuspec"
-      ]
     }
   },
   "projectFileDependencyGroups": {
     "net9.0": [
-      "HtmlAgilityPack >= 1.12.4",
-      "Newtonsoft.Json >= 13.0.4",
-      "SharpGLTF.Core >= 1.0.5"
+      "NetGltf2 >= 1.0.1",
+      "Newtonsoft.Json >= 13.0.4"
     ]
   },
   "packageFolders": {
@@ -198,17 +214,13 @@
       "net9.0": {
         "targetAlias": "net9.0",
         "dependencies": {
-          "HtmlAgilityPack": {
+          "NetGltf2": {
             "target": "Package",
-            "version": "[1.12.4, )"
+            "version": "[1.0.1, )"
           },
           "Newtonsoft.Json": {
             "target": "Package",
             "version": "[13.0.4, )"
-          },
-          "SharpGLTF.Core": {
-            "target": "Package",
-            "version": "[1.0.5, )"
           }
         },
         "imports": [

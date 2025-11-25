@@ -1,6 +1,5 @@
 ﻿using System.Text;
 using System.Xml;
-using SharpGLTF.Schema2;
 using Newtonsoft.Json.Linq;
 using protoscone;
 
@@ -283,6 +282,7 @@ foreach (string file in allBglFiles)
 							JArray sortedBufferViews = [];
 							foreach (var (bv, originalIndex) in sorted)
 								sortedBufferViews.Add(bv);
+							json["bufferViews"] = sortedBufferViews;
 
 							// 2. Pre-group accessors by ORIGINAL bufferView index
 							JArray accessors = (JArray?)json["accessors"] ?? [];
@@ -294,13 +294,16 @@ foreach (string file in allBglFiles)
 								.ToDictionary(g => g.Key,
 											  g => g.OrderBy(a => (long?)a["byteOffset"] ?? 0).ToList());
 
-							// 3. Update accessors to refer to NEW bufferView indices
+							// 3. Create reverse mapping: old -> new index
+							Dictionary<int, int> oldToNewIndexMap = bufferViewIndexMap.ToDictionary(kvp => kvp.Value, kvp => kvp.Key);
+							
+							// Update accessors to refer to NEW bufferView indices
 							foreach (JObject accessor in accessors.Cast<JObject>())
 							{
 								if (accessor["bufferView"] != null)
 								{
 									int oldIndex = (int)accessor["bufferView"]!;
-									accessor["bufferView"] = bufferViewIndexMap[oldIndex];
+									accessor["bufferView"] = oldToNewIndexMap[oldIndex];
 								}
 							}
 
@@ -402,6 +405,7 @@ foreach (string file in allBglFiles)
 									byte[] currentAccBytes = glbBinBytesPre[(int)(bvByteOffset + accByteOffset)..(int)(bvByteOffset + accByteOffset + totalAccByteLength)];
 									if (accessorRole == "")
 									{
+										Console.WriteLine("Accessor role is empty, skipping processing.");
 										continue;
 									}
 									else if (TexcoordRegex().IsMatch(accessorRole) || ColorRegex().IsMatch(accessorRole))
@@ -415,21 +419,34 @@ foreach (string file in allBglFiles)
 										}
 										tempAccBin.AddRange(currentAccBytes);
 									}
-									else if (accessorRole == "NORMAL")
-									{
-										originalAccessor["componentType"] = 5126; // FLOAT
-										originalAccessor["type"] = "VEC3";
-										float[] normals = new float[accCount * 3];
-										for (int m = 0; m < accCount; m++)
+										else if (accessorRole == "NORMAL")
 										{
-											int baseIndex = m * 4;
-											int actualIndex = m * 3;
-											// Store packed bytes and w as unsigned byte
-											normals[actualIndex + 0] = (sbyte)currentAccBytes[baseIndex + 0];
-											normals[actualIndex + 1] = (sbyte)currentAccBytes[baseIndex + 1];
-											normals[actualIndex + 2] = (sbyte)currentAccBytes[baseIndex + 2];
-										}
-										// convert normal
+											originalAccessor["componentType"] = 5126; // FLOAT
+											originalAccessor["type"] = "VEC3";
+											float[] normals = new float[accCount * 3];
+											for (int m = 0; m < accCount; m++)
+											{
+												int baseIndex = m * 4;
+												int actualIndex = m * 3;
+												// Unpack signed bytes and normalize to unit vector
+												float x = (sbyte)currentAccBytes[baseIndex + 0] / 127.0f;
+												float y = (sbyte)currentAccBytes[baseIndex + 1] / 127.0f;
+												float z = (sbyte)currentAccBytes[baseIndex + 2] / 127.0f;
+												float length = MathF.Sqrt(x * x + y * y + z * z);
+												if (length > 0.0f)
+												{
+													normals[actualIndex + 0] = x / length;
+													normals[actualIndex + 1] = y / length;
+													normals[actualIndex + 2] = z / length;
+												}
+												else
+												{
+													normals[actualIndex + 0] = 0.0f;
+													normals[actualIndex + 1] = 0.0f;
+													normals[actualIndex + 2] = 1.0f;
+												}
+											}
+											// convert normal
 										if (tempBvBin.Count != 0)
 										{
 											originalAccessor["byteOffset"] = tempBvBin.Count;
@@ -440,20 +457,34 @@ foreach (string file in allBglFiles)
 											tempAccBin.AddRange(bytes);
 										}
 									}
-									else if (accessorRole == "TANGENT")
-									{
-										originalAccessor["componentType"] = 5126; // FLOAT
-										float[] tangents = new float[accCount * 4];
-										for (int m = 0; m < accCount; m++)
+										else if (accessorRole == "TANGENT")
 										{
-											int baseIndex = m * 4;
-											// Store packed bytes and w as unsigned byte
-											tangents[baseIndex + 0] = (sbyte)currentAccBytes[baseIndex + 0];
-											tangents[baseIndex + 1] = (sbyte)currentAccBytes[baseIndex + 1];
-											tangents[baseIndex + 2] = (sbyte)currentAccBytes[baseIndex + 2];
-											tangents[baseIndex + 3] = (sbyte)currentAccBytes[baseIndex + 3];
-										}
-										// convert tangent
+											originalAccessor["componentType"] = 5126; // FLOAT
+											float[] tangents = new float[accCount * 4];
+											for (int m = 0; m < accCount; m++)
+											{
+												int baseIndex = m * 4;
+												// Unpack signed bytes, normalize xyz to unit vector, set w to ±1.0
+												float x = (sbyte)currentAccBytes[baseIndex + 0] / 127.0f;
+												float y = (sbyte)currentAccBytes[baseIndex + 1] / 127.0f;
+												float z = (sbyte)currentAccBytes[baseIndex + 2] / 127.0f;
+												float w = (sbyte)currentAccBytes[baseIndex + 3] < 0 ? -1.0f : 1.0f;
+												float length = MathF.Sqrt(x * x + y * y + z * z);
+												if (length > 0.0f)
+												{
+													tangents[baseIndex + 0] = x / length;
+													tangents[baseIndex + 1] = y / length;
+													tangents[baseIndex + 2] = z / length;
+												}
+												else
+												{
+													tangents[baseIndex + 0] = 1.0f;
+													tangents[baseIndex + 1] = 0.0f;
+													tangents[baseIndex + 2] = 0.0f;
+												}
+												tangents[baseIndex + 3] = w;
+											}
+											// convert tangent
 										if (tempBvBin.Count != 0)
 										{
 											originalAccessor["byteOffset"] = tempBvBin.Count;
@@ -471,16 +502,16 @@ foreach (string file in allBglFiles)
 										for (int m = 0; m < accCount; m++)
 										{
 											int baseIndex = m * 12;
-											// Decode 3-component 16-bit signed normalized integer to float
+											// POSITION data is already in float format, just read it
 											float x = BitConverter.ToSingle(currentAccBytes, baseIndex + 0);
 											float y = BitConverter.ToSingle(currentAccBytes, baseIndex + 4);
 											float z = BitConverter.ToSingle(currentAccBytes, baseIndex + 8);
 											if (x < min[0]) min[0] = x;
-											else if (y < min[1]) min[1] = y;
-											else if (z < min[2]) min[2] = z;
-											else if (x > max[0]) max[0] = x;
-											else if (y > max[1]) max[1] = y;
-											else if (z > max[2]) max[2] = z;
+											if (y < min[1]) min[1] = y;
+											if (z < min[2]) min[2] = z;
+											if (x > max[0]) max[0] = x;
+											if (y > max[1]) max[1] = y;
+											if (z > max[2]) max[2] = z;
 										}
 										originalAccessor["min"] = new JArray(min);
 										originalAccessor["max"] = new JArray(max);

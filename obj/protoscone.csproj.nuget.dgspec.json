@@ -51,17 +51,13 @@
         "net9.0": {
           "targetAlias": "net9.0",
           "dependencies": {
-            "HtmlAgilityPack": {
+            "NetGltf2": {
               "target": "Package",
-              "version": "[1.12.4, )"
+              "version": "[1.0.1, )"
             },
             "Newtonsoft.Json": {
               "target": "Package",
               "version": "[13.0.4, )"
-            },
-            "SharpGLTF.Core": {
-              "target": "Package",
-              "version": "[1.0.5, )"
             }
           },
           "imports": [
