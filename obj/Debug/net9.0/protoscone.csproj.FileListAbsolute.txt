@@ -34,4 +34,6 @@ C:\Users\sriem\Documents\Aviation\protoscone\obj\Debug\net9.0\refint\protoscone.
 C:\Users\sriem\Documents\Aviation\protoscone\obj\Debug\net9.0\protoscone.pdb
 C:\Users\sriem\Documents\Aviation\protoscone\obj\Debug\net9.0\protoscone.genruntimeconfig.cache
 C:\Users\sriem\Documents\Aviation\protoscone\obj\Debug\net9.0\ref\protoscone.dll
-C:\Users\sriem\Documents\Aviation\protoscone\bin\Debug\net9.0\NetGltf.dll
+C:\Users\sriem\Documents\Aviation\protoscone\bin\Debug\net9.0\SharpGLTF.Core.dll
+C:\Users\sriem\Documents\Aviation\protoscone\bin\Debug\net9.0\SharpGLTF.Runtime.dll
+C:\Users\sriem\Documents\Aviation\protoscone\bin\Debug\net9.0\SharpGLTF.Toolkit.dll

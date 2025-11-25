@@ -8,22 +8,11 @@
     ".NETCoreApp,Version=v9.0": {
       "protoscone/1.0.0": {
         "dependencies": {
-          "NetGltf2": "1.0.1",
-          "Newtonsoft.Json": "13.0.4"
+          "Newtonsoft.Json": "13.0.4",
+          "SharpGLTF.Toolkit": "1.0.5"
         },
         "runtime": {
           "protoscone.dll": {}
-        }
-      },
-      "NetGltf2/1.0.1": {
-        "dependencies": {
-          "Newtonsoft.Json": "13.0.4"
-        },
-        "runtime": {
-          "lib/netstandard2.0/NetGltf.dll": {
-            "assemblyVersion": "1.0.1.0",
-            "fileVersion": "1.0.1.0"
-          }
         }
       },
       "Newtonsoft.Json/13.0.4": {
@@ -31,6 +20,36 @@
           "lib/net6.0/Newtonsoft.Json.dll": {
             "assemblyVersion": "13.0.0.0",
             "fileVersion": "13.0.4.30916"
+          }
+        }
+      },
+      "SharpGLTF.Core/1.0.5": {
+        "runtime": {
+          "lib/net8.0/SharpGLTF.Core.dll": {
+            "assemblyVersion": "1.0.0.0",
+            "fileVersion": "1.0.0.0"
+          }
+        }
+      },
+      "SharpGLTF.Runtime/1.0.5": {
+        "dependencies": {
+          "SharpGLTF.Core": "1.0.5"
+        },
+        "runtime": {
+          "lib/net8.0/SharpGLTF.Runtime.dll": {
+            "assemblyVersion": "1.0.0.0",
+            "fileVersion": "1.0.0.0"
+          }
+        }
+      },
+      "SharpGLTF.Toolkit/1.0.5": {
+        "dependencies": {
+          "SharpGLTF.Runtime": "1.0.5"
+        },
+        "runtime": {
+          "lib/net8.0/SharpGLTF.Toolkit.dll": {
+            "assemblyVersion": "1.0.0.0",
+            "fileVersion": "1.0.0.0"
           }
         }
       }
@@ -42,19 +61,33 @@
       "serviceable": false,
       "sha512": ""
     },
-    "NetGltf2/1.0.1": {
-      "type": "package",
-      "serviceable": true,
-      "sha512": "sha512-HOxz7uv5dDrljkC6/Pdj+XzrkDYIIjsx0Y1ZPNbaydc7wPBgkwYmwJ6k7OLBIxc9wduxD9EW377QlfA/0unzFA==",
-      "path": "netgltf2/1.0.1",
-      "hashPath": "netgltf2.1.0.1.nupkg.sha512"
-    },
     "Newtonsoft.Json/13.0.4": {
       "type": "package",
       "serviceable": true,
       "sha512": "sha512-pdgNNMai3zv51W5aq268sujXUyx7SNdE2bj1wZcWjAQrKMFZV260lbqYop1d2GM67JI1huLRwxo9ZqnfF/lC6A==",
       "path": "newtonsoft.json/13.0.4",
       "hashPath": "newtonsoft.json.13.0.4.nupkg.sha512"
+    },
+    "SharpGLTF.Core/1.0.5": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-HNHKPqaHXm7R1nlXZ764K5UI02IeDOQ5DQKLjwYUVNTsSW27jJpw+wLGQx6ZFoiFYqUlyZjmsu+WfEak2GmJAg==",
+      "path": "sharpgltf.core/1.0.5",
+      "hashPath": "sharpgltf.core.1.0.5.nupkg.sha512"
+    },
+    "SharpGLTF.Runtime/1.0.5": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-EVP32k4LqERxSVICiupT8xQvhHSHJCiXajBjNpqdfdajtREHayuVhH0Jmk6uSjTLX8/IIH9XfT34sw3TwvCziw==",
+      "path": "sharpgltf.runtime/1.0.5",
+      "hashPath": "sharpgltf.runtime.1.0.5.nupkg.sha512"
+    },
+    "SharpGLTF.Toolkit/1.0.5": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-piQKk7PH2pSWQSQmCSd8cYPaDtAy/ppAD+Mrh2RUhhHI8awl81HqqLyAauwQhJwea3LNaiJ6f4ehZuOGk89TlA==",
+      "path": "sharpgltf.toolkit/1.0.5",
+      "hashPath": "sharpgltf.toolkit.1.0.5.nupkg.sha512"
     }
   }
 }

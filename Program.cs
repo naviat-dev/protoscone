@@ -222,7 +222,7 @@ foreach (string file in allBglFiles)
 			UInt128 guidEmpty = new(BitConverter.ToUInt64(guidEmptyBytes, 8), BitConverter.ToUInt64(guidEmptyBytes, 0));
 			byte[] guidBytes = br.ReadBytes(16);
 			UInt128 guid = new(BitConverter.ToUInt64(guidBytes, 8), BitConverter.ToUInt64(guidBytes, 0));
-			float scale = br.ReadSingle();
+			double scale = br.ReadSingle(); // Read as float from file, store as double for precision
 			LibraryObject libObj = new()
 			{
 				id = id,
@@ -231,17 +231,25 @@ foreach (string file in allBglFiles)
 				latitude = 90.0 - (latitude * (180.0 / 536870912.0)),
 				altitude = altitude,
 				flags = flags,
-				pitch = pitch * (360.0 / 65536.0),
-				bank = bank * (360.0 / 65536.0),
-				heading = heading * (360.0 / 65536.0),
+				pitch = Math.Round(pitch * (360.0 / 65536.0), 3),
+				bank = Math.Round(bank * (360.0 / 65536.0), 3),
+				heading = Math.Round(heading * (360.0 / 65536.0), 3),
 				imageComplexity = imageComplexity,
 				guidEmpty = guidEmpty,
 				guid = guid,
-				scale = scale
+				scale = Math.Round(scale + 1, 3)
 			};
+			if (!libraryObjects.TryGetValue(guid, out List<LibraryObject>? _))
+			{
+				libraryObjects[guid] = [];
+			}
 			libraryObjects[guid].Add(libObj);
-			// Console.WriteLine($"{libObj.guid:X4}\t{libObj.size}\t{libObj.longitude:F6}\t{libObj.latitude:F6}\t{libObj.altitude}\t[{string.Join(",", libObj.flags)}]\t{libObj.pitch:F2}\t{libObj.bank:F2}\t{libObj.heading:F2}\t{libObj.imageComplexity}\t{libObj.scale:F3}");
+			Console.WriteLine($"{libObj.guid:X4}\t{libObj.size}\t{libObj.longitude:F6}\t{libObj.latitude:F6}\t{libObj.altitude}\t[{string.Join(",", libObj.flags)}]\t{libObj.pitch:F2}\t{libObj.bank:F2}\t{libObj.heading:F2}\t{libObj.imageComplexity}\t{libObj.scale}");
 			bytesRead += size;
+			if (Math.Round(scale, 3) != 0)
+			{
+				Console.ReadLine();
+			}
 		}
 	}
 }
@@ -342,7 +350,7 @@ struct LibraryObject
 	public short imageComplexity;
 	public UInt128 guidEmpty;
 	public UInt128 guid;
-	public float scale;
+	public double scale;
 }
 
 struct LodData

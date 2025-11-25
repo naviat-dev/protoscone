@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("protoscone")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+16cfa55dd6640485087278f5bbb28f44260902b8")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+a683b98d018ef8cf2c97c90a617ae6edb9420217")]
 [assembly: System.Reflection.AssemblyProductAttribute("protoscone")]
 [assembly: System.Reflection.AssemblyTitleAttribute("protoscone")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
