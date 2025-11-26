@@ -1,5 +1,10 @@
-﻿using System.Text;
+﻿using System.Numerics;
+using System.Text;
 using System.Xml;
+using Newtonsoft.Json.Linq;
+using SharpGLTF.Geometry;
+using SharpGLTF.Geometry.VertexTypes;
+using SharpGLTF.Scenes;
 
 // Argument validation and processing
 if (args.Length != 2)
@@ -32,6 +37,8 @@ if (!Directory.Exists(tempPath))
 }
 
 string[] allBglFiles = Directory.GetFiles(args[0], "*.bgl", SearchOption.AllDirectories);
+HashSet<UInt128> sceneryGuids = [];
+HashSet<UInt128> modelGuids = [];
 Console.WriteLine($"Found files:\n{string.Join(",\n", allBglFiles)}");
 Dictionary<UInt128, List<LibraryObject>> libraryObjects = [];
 List<ModelData> modelDatas = [];
@@ -160,6 +167,41 @@ foreach (string file in allBglFiles)
 							int glbSize = BitConverter.ToInt32(mdlBytes, j + 4);
 							byte[] glbBytesPre = br.ReadBytes(glbSize);
 							glbBytesPre = mdlBytes[(j + 8)..(j + 8 + glbSize)];
+
+							// Fill the end of the JSON chunk with spaces, and replace non-printable characters with spaces.
+							uint JSONLength = BitConverter.ToUInt32(glbBytesPre, 0x0C);
+							for (int k = 0x14; k < 0x14 + JSONLength; k++)
+							{
+								if (glbBytesPre[k] < 0x20 || glbBytesPre[k] > 0x7E)
+								{
+									glbBytesPre[k] = 0x20;
+								}
+							}
+
+							uint binLength = BitConverter.ToUInt32(glbBytesPre, 0x14 + (int)JSONLength);
+							byte[] glbBinBytes = glbBytesPre[(0x14 + (int)JSONLength + 8)..(0x14 + (int)JSONLength + 8 + (int)binLength)];
+
+							JObject json = JObject.Parse(Encoding.UTF8.GetString(glbBytesPre, 0x14, (int)JSONLength).Trim());
+							JArray meshes = (JArray)json["meshes"]!;
+							JArray accessors = (JArray)json["accessors"]!;
+							JArray bufferViews = (JArray)json["bufferViews"]!;
+							SceneBuilder scene = new();
+							foreach (JObject mesh in meshes.Cast<JObject>())
+							{
+								Console.WriteLine($"Processing mesh: {mesh["name"]?.Value<string>() ?? "UnnamedMesh"}");
+								MeshBuilder<VertexPositionNormalTangent, VertexTexture1, VertexEmpty> meshBuilder = GlbBuilder.BuildMesh(mesh, accessors, bufferViews, glbBinBytes);
+								Console.WriteLine($"Built mesh with {meshBuilder.Primitives.Count} primitives.");
+								foreach (var prim in meshBuilder.Primitives)
+								{
+									Console.WriteLine($"Primitive has {prim.Vertices.Count} vertices and {prim.GetIndices().Count} indices.");
+								}
+
+								// meshBuilder is your MeshBuilder<VertexPositionNormalTangent> (or whichever type)
+								scene.AddRigidMesh(meshBuilder, Matrix4x4.Identity);
+							}
+
+							// Write GLB:
+							scene.ToGltf2().SaveGLB(Path.Combine(args[0], $"{name}.glb"));
 						}
 					}
 				}
@@ -170,6 +212,7 @@ foreach (string file in allBglFiles)
 				name = name,
 				lods = lods
 			});
+			modelGuids.Add(guid);
 			bytesRead += (int)modelDataSize + 24;
 			objectsRead++;
 		}
@@ -229,7 +272,7 @@ foreach (string file in allBglFiles)
 				size = size,
 				longitude = (longitude * (360.0 / 805306368.0)) - 180.0,
 				latitude = 90.0 - (latitude * (180.0 / 536870912.0)),
-				altitude = altitude,
+				altitude = flags.Contains(Flags.IsAboveAGL) ? altitude : altitude + FgElev.GetElevation(90.0 - (latitude * (180.0 / 536870912.0)), (longitude * (360.0 / 805306368.0)) - 180.0),
 				flags = flags,
 				pitch = Math.Round(pitch * (360.0 / 65536.0), 3),
 				bank = Math.Round(bank * (360.0 / 65536.0), 3),
@@ -243,17 +286,16 @@ foreach (string file in allBglFiles)
 			{
 				libraryObjects[guid] = [];
 			}
+			sceneryGuids.Add(guid);
 			libraryObjects[guid].Add(libObj);
 			Console.WriteLine($"{libObj.guid:X4}\t{libObj.size}\t{libObj.longitude:F6}\t{libObj.latitude:F6}\t{libObj.altitude}\t[{string.Join(",", libObj.flags)}]\t{libObj.pitch:F2}\t{libObj.bank:F2}\t{libObj.heading:F2}\t{libObj.imageComplexity}\t{libObj.scale}");
 			bytesRead += size;
-			if (Math.Round(scale, 3) != 0)
-			{
-				Console.ReadLine();
-			}
 		}
 	}
 }
 Console.WriteLine($"Total LibraryObjects parsed: {libraryObjects.Count}. Total ModelDatas parsed: {modelDatas.Count}.");
+File.WriteAllText(Path.Combine(args[0], "scenery_guids.txt"), string.Join(Environment.NewLine, sceneryGuids.Select(g => g.ToString("X"))));
+File.WriteAllText(Path.Combine(args[0], "model_guids.txt"), string.Join(Environment.NewLine, modelGuids.Select(g => g.ToString("X"))));
 
 // We are more likely to have LibraryObjects that don't have corresponding ModelData than vice versa, so iterate over modelDatas
 // Group this by the index of the tile to remove duplicates and simpler writing later
@@ -300,31 +342,6 @@ int GetTileIndex(double lat, double lon)
 	}
 }
 
-static int ComponentSize(int componentType)
-{
-	return componentType switch
-	{
-		5120 => 1, // BYTE
-		5121 => 1, // UNSIGNED_BYTE
-		5122 => 2, // SHORT
-		5123 => 2, // UNSIGNED_SHORT
-		5125 => 4, // UNSIGNED_INT
-		5126 => 4, // FLOAT
-		_ => throw new Exception("Unknown componentType")
-	};
-}
-static int ComponentCount(string type)
-{
-	return type switch
-	{
-		"SCALAR" => 1,
-		"VEC2" => 2,
-		"VEC3" => 3,
-		"VEC4" => 4,
-		_ => throw new Exception("Unsupported type")
-	};
-}
-
 enum Flags
 {
 	IsAboveAGL = 0,
@@ -338,16 +355,16 @@ enum Flags
 
 struct LibraryObject
 {
-	public ushort id;
-	public ushort size;
+	public int id;
+	public int size;
 	public double longitude;
 	public double latitude;
-	public short altitude;
+	public double altitude;
 	public Flags[] flags;
 	public double pitch;
 	public double bank;
 	public double heading;
-	public short imageComplexity;
+	public int imageComplexity;
 	public UInt128 guidEmpty;
 	public UInt128 guid;
 	public double scale;
