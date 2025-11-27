@@ -66,45 +66,42 @@ public class GlbBuilder
 		return node;
 	}
 
-	public static MeshBuilder<VertexPositionNormalTangent, VertexTexture2, VertexEmpty> BuildMesh(JObject meshJson, JArray accessorsJson, JArray bufferViewsJson, byte[] glbBinBytes)
+	public static MeshBuilder<VertexPositionNormalTangent, VertexTexture2, VertexEmpty> BuildMesh(JObject meshJson, JArray accessorsJson, JArray bufferViewsJson, JArray materialsJson, JArray imagesJson, byte[] glbBinBytes)
 	{
 
 		MeshBuilder<VertexPositionNormalTangent, VertexTexture2, VertexEmpty> mesh = new(meshJson["name"]?.Value<string>() ?? "UnnamedMesh");
 		foreach (JObject primJson in ((JArray)meshJson["primitives"]!).Cast<JObject>())
 		{
-			PrimitiveBuilder<MaterialBuilder, VertexPositionNormalTangent, VertexTexture2, VertexEmpty> prim = mesh.UsePrimitive(MaterialBuilder.CreateDefault());
+			PrimitiveBuilder<MaterialBuilder, VertexPositionNormalTangent, VertexTexture2, VertexEmpty> prim = mesh.UsePrimitive(BuildMaterial((JObject)materialsJson[primJson["material"]!.Value<int>()], (JArray)imagesJson, Array.Empty<string>()));
 			JObject attributes = (JObject)primJson["attributes"]!;
 			PrimData data = new();
 
 			// Load indices
-			int idxAccIndex = (int)primJson["indices"]!;
+			int idxAccIndex = primJson["indices"]!.Value<int>();
 			if (accessorsJson.Count > idxAccIndex)
 			{
 				data.Indices = LoadIndexData((JObject)accessorsJson[idxAccIndex], bufferViewsJson, glbBinBytes);
 			}
 
 			// Load positions
-			int posAccIndex = (int)attributes["POSITION"]!;
+			int posAccIndex = attributes["POSITION"]!.Value<int>();
 			if (accessorsJson.Count > posAccIndex)
 			{
 				data.Positions = LoadPositionAccessorData((JObject)accessorsJson[posAccIndex], bufferViewsJson, glbBinBytes);
 			}
 
 			// Load normals
-			int normAccIndex = (int)attributes["NORMAL"]!;
+			int normAccIndex = attributes["NORMAL"]!.Value<int>();
 			if (accessorsJson.Count > normAccIndex)
 			{
 				data.Normals = LoadNormalAccessorData((JObject)accessorsJson[normAccIndex], bufferViewsJson, glbBinBytes);
 			}
 
 			// Load tangents
-			if (attributes["TANGENT"] != null)
+			int tangAccIndex = attributes["TANGENT"]!.Value<int>();
+			if (accessorsJson.Count > tangAccIndex)
 			{
-				int tangAccIndex = (int)attributes["TANGENT"]!;
-				if (accessorsJson.Count > tangAccIndex)
-				{
-					data.Tangents = LoadTangentAccessorData((JObject)accessorsJson[tangAccIndex], bufferViewsJson, glbBinBytes);
-				}
+				data.Tangents = LoadTangentAccessorData((JObject)accessorsJson[tangAccIndex], bufferViewsJson, glbBinBytes);
 			}
 
 			// Load all texture coordinate sets
@@ -123,6 +120,15 @@ public class GlbBuilder
 				{
 					break; // Stop when we hit the first missing TEXCOORD_N
 				}
+			}
+
+			// Load materials
+			int materialIndex = primJson["material"]!.Value<int>();
+			if (materialIndex >= 0)
+			{
+				// For simplicity, using a default material here.
+				// In a full implementation, you would load the material properties from the glTF file.
+				// prim.SetMaterial(MaterialBuilder.CreateDefault());
 			}
 
 			int baseVertex = primJson["extras"]?["ASOBO_primitive"]?["BaseVertexIndex"]?.Value<int>() ?? 0;
@@ -157,10 +163,82 @@ public class GlbBuilder
 				VertexBuilder<VertexPositionNormalTangent, VertexTexture2, VertexEmpty> v2 = new(geo2, mat2);
 				VertexBuilder<VertexPositionNormalTangent, VertexTexture2, VertexEmpty> v3 = new(geo3, mat3);
 
-				prim.AddTriangle(v1, v2, v3);
+				prim.AddTriangle(v1, v3, v2); // This has got to be inverted for normals
 			}
 		}
 		return mesh;
+	}
+
+	private static MaterialBuilder BuildMaterial(JObject materialJson, JArray imagesJson, string[] imagePaths)
+	{
+		MaterialBuilder material = MaterialBuilder.CreateDefault();
+		material.Name = materialJson["name"]?.Value<string>() ?? "UnnamedMaterial";
+		if (materialJson["pbrMetallicRoughness"] != null)
+		{
+			JObject pbr = (JObject)materialJson["pbrMetallicRoughness"]!;
+			if (pbr["baseColorFactor"] != null)
+			{
+				JArray colorFactor = (JArray)pbr["baseColorFactor"]!;
+				material.WithBaseColor(new Vector4(colorFactor[0].Value<float>(),
+												   colorFactor[1].Value<float>(),
+												   colorFactor[2].Value<float>(),
+												   colorFactor[3].Value<float>()));
+			}
+			if (pbr["metallicFactor"] != null || pbr["roughnessFactor"] != null)
+			{
+				material.WithMetallicRoughness(pbr["metallicFactor"]?.Value<float>() ?? 0, pbr["roughnessFactor"]?.Value<float>() ?? 0);
+			}
+			if (pbr["metallicRoughnessTexture"] != null)
+			{
+				int texIndex = pbr["metallicRoughnessTexture"]!["index"]!.Value<int>();
+				// int texCoordSet = pbr["metallicRoughnessTexture"]!["texCoord"]!.Value<int>();
+				
+				// ImageBuilder image = new(); // Placeholder for actual image loading
+				// material.WithChannelImage(KnownChannel.MetallicRoughness, imagesJson[texIndex]["name"]!.Value<string>()!);
+			}
+		}
+		if (materialJson["normalTexture"] != null)
+		{
+			JObject normalTex = (JObject)materialJson["normalTexture"]!;
+			int texIndex = normalTex["index"]!.Value<int>();
+		}
+		if (materialJson["occlusionTexture"] != null)
+		{
+			JObject occTex = (JObject)materialJson["occlusionTexture"]!;
+			int texIndex = occTex["index"]!.Value<int>();
+		}
+		if (materialJson["emissiveTexture"] != null)
+		{
+			JObject emissiveTex = (JObject)materialJson["emissiveTexture"]!;
+			int texIndex = emissiveTex["index"]!.Value<int>();
+		}
+		if (materialJson["emissiveFactor"] != null)
+		{
+			JArray emissiveFactor = (JArray)materialJson["emissiveFactor"]!;
+			material.WithEmissive(new Vector3(emissiveFactor[0].Value<float>(),
+											  emissiveFactor[1].Value<float>(),
+											  emissiveFactor[2].Value<float>()));
+		}
+		if (materialJson["alphaMode"] != null)
+		{
+			string alphaMode = materialJson["alphaMode"]!.Value<string>()!;
+			if (alphaMode == "BLEND")
+			{
+				material.WithAlpha(AlphaMode.BLEND);
+			}
+			else if (alphaMode == "MASK")
+			{
+				float alphaCutoff = materialJson["alphaCutoff"]?.Value<float>() ?? 0.5f;
+				material.WithAlpha(AlphaMode.MASK, alphaCutoff);
+			}
+			else
+			{
+				material.WithAlpha(AlphaMode.OPAQUE);
+			}
+		}
+		material.DoubleSided = materialJson["doubleSided"]?.Value<bool>() ?? false;
+		// Additional material properties can be set here based on the glTF material definition
+		return material;
 	}
 
 	private static Vector3[] LoadNormalAccessorData(JObject accessorJson, JArray bufferViewsJson, byte[] binBytes)
