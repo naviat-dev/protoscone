@@ -12,7 +12,7 @@ public class GlbBuilder
 	{
 		public Vector3[] Positions { get; set; } = [];
 		public Vector3[] Normals { get; set; } = [];
-		public Vector2[] TexCoords { get; set; } = [];
+		public List<Vector2[]> TexCoords { get; set; } = [];
 		public Vector4[] Tangents { get; set; } = [];
 		public int[] Indices { get; set; } = [];
 	}
@@ -66,13 +66,13 @@ public class GlbBuilder
 		return node;
 	}
 
-	public static MeshBuilder<VertexPositionNormalTangent, VertexTexture1, VertexEmpty> BuildMesh(JObject meshJson, JArray accessorsJson, JArray bufferViewsJson, byte[] glbBinBytes)
+	public static MeshBuilder<VertexPositionNormalTangent, VertexTexture2, VertexEmpty> BuildMesh(JObject meshJson, JArray accessorsJson, JArray bufferViewsJson, byte[] glbBinBytes)
 	{
 
-		MeshBuilder<VertexPositionNormalTangent, VertexTexture1, VertexEmpty> mesh = new(meshJson["name"]?.Value<string>() ?? "UnnamedMesh");
+		MeshBuilder<VertexPositionNormalTangent, VertexTexture2, VertexEmpty> mesh = new(meshJson["name"]?.Value<string>() ?? "UnnamedMesh");
 		foreach (JObject primJson in ((JArray)meshJson["primitives"]!).Cast<JObject>())
 		{
-			PrimitiveBuilder<MaterialBuilder, VertexPositionNormalTangent, VertexTexture1, VertexEmpty> prim = mesh.UsePrimitive(MaterialBuilder.CreateDefault());
+			PrimitiveBuilder<MaterialBuilder, VertexPositionNormalTangent, VertexTexture2, VertexEmpty> prim = mesh.UsePrimitive(MaterialBuilder.CreateDefault());
 			JObject attributes = (JObject)primJson["attributes"]!;
 			PrimData data = new();
 
@@ -107,13 +107,21 @@ public class GlbBuilder
 				}
 			}
 
-			// Load texture coordinates
-			if (attributes["TEXCOORD_0"] != null)
+			// Load all texture coordinate sets
+			for (int texCoordIndex = 0; texCoordIndex < 2; texCoordIndex++)
 			{
-				int uvAccIndex = (int)attributes["TEXCOORD_0"]!;
-				if (accessorsJson.Count > uvAccIndex)
+				string texCoordKey = $"TEXCOORD_{texCoordIndex}";
+				if (attributes[texCoordKey] != null)
 				{
-					data.TexCoords = LoadTexCoordAccessorData((JObject)accessorsJson[uvAccIndex], bufferViewsJson, glbBinBytes);
+					int uvAccIndex = (int)attributes[texCoordKey]!;
+					if (accessorsJson.Count > uvAccIndex)
+					{
+						data.TexCoords.Add(LoadTexCoordAccessorData((JObject)accessorsJson[uvAccIndex], bufferViewsJson, glbBinBytes));
+					}
+				}
+				else
+				{
+					break; // Stop when we hit the first missing TEXCOORD_N
 				}
 			}
 
@@ -123,17 +131,29 @@ public class GlbBuilder
 				int idx2 = data.Indices[i + 1];
 				int idx3 = data.Indices[i + 2];
 
-				var geo1 = new VertexPositionNormalTangent(data.Positions[idx1], data.Normals[idx1], data.Tangents.Length > 0 ? data.Tangents[idx1] : Vector4.Zero);
-				var geo2 = new VertexPositionNormalTangent(data.Positions[idx2], data.Normals[idx2], data.Tangents.Length > 0 ? data.Tangents[idx2] : Vector4.Zero);
-				var geo3 = new VertexPositionNormalTangent(data.Positions[idx3], data.Normals[idx3], data.Tangents.Length > 0 ? data.Tangents[idx3] : Vector4.Zero);
+				int baseVertex = primJson["extras"]?["ASOBO_primitive"]?["BaseVertexIndex"]?.Value<int>() ?? 0;
 
-				var mat1 = new VertexTexture1(data.TexCoords.Length > 0 ? data.TexCoords[idx1] : Vector2.Zero);
-				var mat2 = new VertexTexture1(data.TexCoords.Length > 0 ? data.TexCoords[idx2] : Vector2.Zero);
-				var mat3 = new VertexTexture1(data.TexCoords.Length > 0 ? data.TexCoords[idx3] : Vector2.Zero);
+				VertexPositionNormalTangent geo1 = new(data.Positions[idx1], -data.Normals[idx1], data.Tangents.Length > 0 ? -data.Tangents[idx1] : Vector4.Zero);
+				VertexPositionNormalTangent geo2 = new(data.Positions[idx2], -data.Normals[idx2], data.Tangents.Length > 0 ? -data.Tangents[idx2] : Vector4.Zero);
+				VertexPositionNormalTangent geo3 = new(data.Positions[idx3], -data.Normals[idx3], data.Tangents.Length > 0 ? -data.Tangents[idx3] : Vector4.Zero);
 
-				var v1 = new VertexBuilder<VertexPositionNormalTangent, VertexTexture1, VertexEmpty>(geo1, mat1);
-				var v2 = new VertexBuilder<VertexPositionNormalTangent, VertexTexture1, VertexEmpty>(geo2, mat2);
-				var v3 = new VertexBuilder<VertexPositionNormalTangent, VertexTexture1, VertexEmpty>(geo3, mat3);
+				MaterialBuilder mat = MaterialBuilder.CreateDefault();
+
+				Vector2 uv0_1 = data.TexCoords.Count > 0 ? data.TexCoords[0][idx1] : Vector2.Zero;
+				Vector2 uv0_2 = data.TexCoords.Count > 0 ? data.TexCoords[0][idx2] : Vector2.Zero;
+				Vector2 uv0_3 = data.TexCoords.Count > 0 ? data.TexCoords[0][idx3] : Vector2.Zero;
+
+				Vector2 uv1_1 = data.TexCoords.Count > 1 ? data.TexCoords[1][idx1] : Vector2.Zero;
+				Vector2 uv1_2 = data.TexCoords.Count > 1 ? data.TexCoords[1][idx2] : Vector2.Zero;
+				Vector2 uv1_3 = data.TexCoords.Count > 1 ? data.TexCoords[1][idx3] : Vector2.Zero;
+
+				VertexTexture2 mat1 = new(uv0_1, uv1_1);
+				VertexTexture2 mat2 = new(uv0_2, uv1_2);
+				VertexTexture2 mat3 = new(uv0_3, uv1_3);
+
+				VertexBuilder<VertexPositionNormalTangent, VertexTexture2, VertexEmpty> v1 = new(geo1, mat1);
+				VertexBuilder<VertexPositionNormalTangent, VertexTexture2, VertexEmpty> v2 = new(geo2, mat2);
+				VertexBuilder<VertexPositionNormalTangent, VertexTexture2, VertexEmpty> v3 = new(geo3, mat3);
 
 				prim.AddTriangle(v1, v2, v3);
 			}
@@ -247,14 +267,12 @@ public class GlbBuilder
 		int bufferViewByteOffset = bufferView["byteOffset"]?.Value<int>() ?? 0;
 
 		int componentType = accessorJson["componentType"]!.Value<int>(); // 5123 (UNSIGNED_SHORT) or 5125 (UNSIGNED_INT)
-		string? type = accessorJson["type"]!.Value<string>();            // should be "SCALAR"
 
 		int componentSize = ComponentSize(componentType);  // 2 for UNSIGNED_SHORT, 4 for UNSIGNED_INT
-		int numComponents = ComponentCount(type!);         // for SCALAR: 1
 
 		int[] indices = new int[count];
 
-		int stride = bufferView["byteStride"]?.Value<int>() ?? (componentSize * numComponents);
+		int stride = componentSize;
 
 		for (int i = 0; i < count; i++)
 		{
