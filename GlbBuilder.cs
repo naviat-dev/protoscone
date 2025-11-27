@@ -125,13 +125,15 @@ public class GlbBuilder
 				}
 			}
 
-			for (int i = 0; i < data.Indices.Length; i += 3)
-			{
-				int idx1 = data.Indices[i];
-				int idx2 = data.Indices[i + 1];
-				int idx3 = data.Indices[i + 2];
+			int baseVertex = primJson["extras"]?["ASOBO_primitive"]?["BaseVertexIndex"]?.Value<int>() ?? 0;
+			int startIndex = primJson["extras"]?["ASOBO_primitive"]?["StartIndex"]?.Value<int>() ?? 0;
+			int primCount = primJson["extras"]?["ASOBO_primitive"]?["PrimitiveCount"]?.Value<int>() ?? 0;
 
-				int baseVertex = primJson["extras"]?["ASOBO_primitive"]?["BaseVertexIndex"]?.Value<int>() ?? 0;
+			for (int i = 0; i < primCount; i++)
+			{
+				int idx1 = baseVertex + data.Indices[startIndex + (i * 3)];
+				int idx2 = baseVertex + data.Indices[startIndex + (i * 3) + 1];
+				int idx3 = baseVertex + data.Indices[startIndex + (i * 3) + 2];
 
 				VertexPositionNormalTangent geo1 = new(data.Positions[idx1], -data.Normals[idx1], data.Tangents.Length > 0 ? -data.Tangents[idx1] : Vector4.Zero);
 				VertexPositionNormalTangent geo2 = new(data.Positions[idx2], -data.Normals[idx2], data.Tangents.Length > 0 ? -data.Tangents[idx2] : Vector4.Zero);
