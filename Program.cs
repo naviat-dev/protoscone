@@ -5,6 +5,7 @@ using Newtonsoft.Json.Linq;
 using SharpGLTF.Geometry;
 using SharpGLTF.Geometry.VertexTypes;
 using SharpGLTF.Scenes;
+using SharpGLTF.Schema2;
 
 // Argument validation and processing
 if (args.Length != 2)
@@ -185,7 +186,23 @@ foreach (string file in allBglFiles)
 							JArray meshes = (JArray)json["meshes"]!;
 							JArray accessors = (JArray)json["accessors"]!;
 							JArray bufferViews = (JArray)json["bufferViews"]!;
+
 							SceneBuilder scene = new();
+							Dictionary<int, List<int>> meshIndexToSceneNodeIndex = [];
+							for (int k = 0; k < json["nodes"]!.Count(); k++)
+							{
+								JObject node = (JObject)json["nodes"]![k]!;
+								if (node["mesh"] != null)
+								{
+									int meshIndex = node["mesh"]!.Value<int>();
+									if (!meshIndexToSceneNodeIndex.TryGetValue(meshIndex, out List<int>? value))
+									{
+										value = [];
+										meshIndexToSceneNodeIndex[meshIndex] = value;
+									}
+									meshIndexToSceneNodeIndex[meshIndex].Add(k);
+								}
+							}
 							foreach (JObject mesh in meshes.Cast<JObject>())
 							{
 								Console.WriteLine($"Processing mesh: {mesh["name"]?.Value<string>() ?? "UnnamedMesh"}");
@@ -195,9 +212,23 @@ foreach (string file in allBglFiles)
 								{
 									Console.WriteLine($"Primitive has {prim.Vertices.Count} vertices and {prim.GetIndices().Count} indices.");
 								}
+								Vector3 translationFinal = Vector3.Zero;
+								Quaternion rotationFinal = Quaternion.Identity;
+								Vector3 scaleFinal = Vector3.One;
+								foreach (int nodeIndex in meshIndexToSceneNodeIndex[meshes.IndexOf(mesh)])
+								{
+									NodeBuilder node = GlbBuilder.BuildNode(nodeIndex, (JArray)json["nodes"]!);
+									translationFinal += node.Translation == null ? Vector3.Zero : node.Translation.Value;
+									rotationFinal *= node.Rotation == null ? Quaternion.Identity : node.Rotation.Value;
+									scaleFinal *= node.Scale == null ? Vector3.One : node.Scale.Value;
+								}
 
+								Console.WriteLine($"Final Transform - Translation: {translationFinal}, Rotation: {rotationFinal}, Scale: {scaleFinal}");
 								// meshBuilder is your MeshBuilder<VertexPositionNormalTangent> (or whichever type)
-								scene.AddRigidMesh(meshBuilder, Matrix4x4.Identity);
+								var transform = Matrix4x4.CreateScale(scaleFinal) * 
+												Matrix4x4.CreateFromQuaternion(Quaternion.Normalize(rotationFinal)) * 
+												Matrix4x4.CreateTranslation(translationFinal);
+								scene.AddRigidMesh(meshBuilder, transform);
 							}
 
 							// Write GLB:

@@ -3,6 +3,7 @@ using Newtonsoft.Json.Linq;
 using SharpGLTF.Geometry;
 using SharpGLTF.Geometry.VertexTypes;
 using SharpGLTF.Materials;
+using SharpGLTF.Scenes;
 
 public class GlbBuilder
 {
@@ -39,6 +40,30 @@ public class GlbBuilder
 			"VEC4" => 4,
 			_ => throw new Exception("Unsupported type")
 		};
+	}
+
+	public static NodeBuilder BuildNode(int nodeIndex, JArray nodesJson)
+	{
+		JObject nodeJson = (JObject)nodesJson[nodeIndex];
+		NodeBuilder node = new(nodeJson["name"]?.Value<string>() ?? $"Node_{nodeIndex}");
+		// Apply transformations if present
+		if (nodeJson["translation"] != null)
+		{
+			JArray translation = (JArray)nodeJson["translation"]!;
+			node.WithLocalTranslation(new Vector3(translation[0].Value<float>(), translation[1].Value<float>(), translation[2].Value<float>()));
+		}
+		if (nodeJson["rotation"] != null)
+		{
+			JArray rotation = (JArray)nodeJson["rotation"]!;
+			node.WithLocalRotation(new Quaternion(rotation[0].Value<float>(), rotation[1].Value<float>(), rotation[2].Value<float>(), rotation[3].Value<float>()));
+		}
+		if (nodeJson["scale"] != null)
+		{
+			JArray scale = (JArray)nodeJson["scale"]!;
+			node.WithLocalScale(new Vector3(scale[0].Value<float>(), scale[1].Value<float>(), scale[2].Value<float>()));
+		}
+
+		return node;
 	}
 
 	public static MeshBuilder<VertexPositionNormalTangent, VertexTexture1, VertexEmpty> BuildMesh(JObject meshJson, JArray accessorsJson, JArray bufferViewsJson, byte[] glbBinBytes)
@@ -221,10 +246,10 @@ public class GlbBuilder
 		int accessorByteOffset = accessorJson["byteOffset"]?.Value<int>() ?? 0;
 		int bufferViewByteOffset = bufferView["byteOffset"]?.Value<int>() ?? 0;
 
-		int componentType = accessorJson["componentType"]!.Value<int>(); // should be 5123 (UNSIGNED_SHORT)
+		int componentType = accessorJson["componentType"]!.Value<int>(); // 5123 (UNSIGNED_SHORT) or 5125 (UNSIGNED_INT)
 		string? type = accessorJson["type"]!.Value<string>();            // should be "SCALAR"
 
-		int componentSize = ComponentSize(componentType);  // for unsigned short: 2
+		int componentSize = ComponentSize(componentType);  // 2 for UNSIGNED_SHORT, 4 for UNSIGNED_INT
 		int numComponents = ComponentCount(type!);         // for SCALAR: 1
 
 		int[] indices = new int[count];
@@ -235,7 +260,19 @@ public class GlbBuilder
 		{
 			int offset = bufferViewByteOffset + accessorByteOffset + (i * stride);
 
-			indices[i] = BitConverter.ToUInt16(binBytes, offset);
+			if (componentType == 5123) // UNSIGNED_SHORT
+			{
+				indices[i] = BitConverter.ToUInt16(binBytes, offset);
+			}
+			else if (componentType == 5125) // UNSIGNED_INT
+			{
+				// Cast down to int safely
+				indices[i] = (int)BitConverter.ToUInt32(binBytes, offset);
+			}
+			else
+			{
+				throw new Exception($"Unsupported index componentType: {componentType}");
+			}
 		}
 
 		return indices;
@@ -250,11 +287,11 @@ public class GlbBuilder
 		int accessorByteOffset = accessorJson["byteOffset"]?.Value<int>() ?? 0;
 		int bufferViewByteOffset = bufferView["byteOffset"]?.Value<int>() ?? 0;
 
-		int componentType = accessorJson["componentType"]!.Value<int>(); // typically 5122 (SHORT)
-		string? type = accessorJson["type"]!.Value<string>();            // should be "VEC2"
+		int componentType = accessorJson["componentType"]!.Value<int>();
+		string? type = accessorJson["type"]!.Value<string>();
 
-		int componentSize = ComponentSize(componentType);  // for short: 2
-		int numComponents = ComponentCount(type!);         // for VEC2: 2
+		int componentSize = ComponentSize(componentType);
+		int numComponents = ComponentCount(type!);
 
 		Vector2[] texCoords = new Vector2[count];
 
@@ -264,8 +301,11 @@ public class GlbBuilder
 		{
 			int offset = bufferViewByteOffset + accessorByteOffset + (i * stride);
 
-			texCoords[i] = new Vector2(BitConverter.ToSingle(binBytes, offset + (0 * componentSize)),
-								   BitConverter.ToSingle(binBytes, offset + (1 * componentSize)));
+			// Read as half-precision float (16-bit float) - component type 5122 (SHORT) is used to indicate float16
+			Half u = BitConverter.ToHalf(binBytes, offset + (0 * componentSize));
+			Half v = BitConverter.ToHalf(binBytes, offset + (1 * componentSize));
+
+			texCoords[i] = new Vector2((float)u, (float)v);
 		}
 
 		return texCoords;
