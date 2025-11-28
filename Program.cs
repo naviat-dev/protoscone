@@ -104,6 +104,10 @@ foreach (string file in allBglFiles)
 	int objectsRead = 0;
 	foreach ((int subOffset, int subSize) in modelDataSubrecords)
 	{
+		// Reset per-subrecord counters so all subrecords are processed
+		bytesRead = 0;
+		objectsRead = 0;
+
 		while (bytesRead < subSize)
 		{
 			_ = br.BaseStream.Seek(subOffset + (24 * objectsRead), SeekOrigin.Begin);
@@ -166,11 +170,17 @@ foreach (string file in allBglFiles)
 				else if (chunk == "GLBD")
 				{
 					int size = BitConverter.ToInt32(mdlBytes, i + 4);
-					for (int j = i + 8; j < i + 8 + size; j++)
+					int glbIndex = 0; // for unique filenames per GLB in this chunk
+
+					// Scan GLBD payload and skip past each GLB block once processed
+					for (int j = i + 8; j < i + 8 + size;)
 					{
-						if (Encoding.ASCII.GetString(mdlBytes, j, Math.Min(4, mdlBytes.Length - j)) == "GLB\0")
+						// Ensure there are at least 8 bytes for type + size
+						if (j + 8 > mdlBytes.Length) break;
+
+						string sig = Encoding.ASCII.GetString(mdlBytes, j, Math.Min(4, mdlBytes.Length - j));
+						if (sig == "GLB\0")
 						{
-							// Capture GLB file
 							int glbSize = BitConverter.ToInt32(mdlBytes, j + 4);
 							// byte[] glbBytesPre = br.ReadBytes(glbSize);
 							byte[] glbBytes = mdlBytes[(j + 8)..(j + 8 + glbSize)];
@@ -240,10 +250,25 @@ foreach (string file in allBglFiles)
 								scene.AddRigidMesh(meshBuilder, transform);
 							}
 
-							// Write GLB:
-							scene.ToGltf2().SaveGLB(Path.Combine(args[0], $"{name}.glb"));
+							// Write GLB with unique filename (include index to avoid overwrites)
+							string safeName = name;
+							string outName = glbIndex == 0 ? safeName : $"{safeName}_glb{glbIndex}";
+							scene.ToGltf2().SaveGLB(Path.Combine(args[0], $"{outName}.glb"));
+							glbIndex++;
+
+							// Advance j past this GLB record (type[4] + size[4] + payload[glbSize])
+							j += 8 + glbSize;
+						}
+						else
+						{
+							// Not a GLB block; advance reasonably (try to skip unknown 8-byte header or 4-byte step)
+							// Prefer 4-byte alignment advance to find next signature
+							j += 4;
 						}
 					}
+
+					// Advance i past the GLBD chunk payload
+					i += size;
 				}
 			}
 			modelDatas.Add(new ModelData
