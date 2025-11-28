@@ -5,7 +5,6 @@ using Newtonsoft.Json.Linq;
 using SharpGLTF.Geometry;
 using SharpGLTF.Geometry.VertexTypes;
 using SharpGLTF.Scenes;
-using SharpGLTF.Schema2;
 
 // Argument validation and processing
 if (args.Length != 2)
@@ -130,62 +129,72 @@ foreach (string file in allBglFiles)
 				{
 					int size = BitConverter.ToInt32(mdlBytes, i + 4);
 					string gxmlContent = Encoding.UTF8.GetString(mdlBytes, i + 8, size);
-					XmlDocument xmlDoc = new();
-					xmlDoc.LoadXml(gxmlContent);
-					name = xmlDoc.GetElementsByTagName("ModelInfo")[0]?.Attributes?["name"]?.Value ?? $"{guid:X}";
-					XmlNodeList lodNodes = xmlDoc.GetElementsByTagName("LOD");
-					foreach (XmlNode lodNode in lodNodes)
+					try
 					{
-						string lodObjName = lodNode?.Attributes?["ModelFile"]?.Value ?? "Unnamed";
-						int minSize = 0;
-						try
+						XmlDocument xmlDoc = new();
+						xmlDoc.LoadXml(gxmlContent);
+						name = xmlDoc.GetElementsByTagName("ModelInfo")[0]?.Attributes?["name"]?.Value ?? $"{guid:X}";
+						XmlNodeList lodNodes = xmlDoc.GetElementsByTagName("LOD");
+						foreach (XmlNode lodNode in lodNodes)
 						{
-							minSize = int.Parse(lodNode?.Attributes?["minSize"]?.Value ?? "0");
-						}
-						catch (FormatException)
-						{
-							continue;
-						}
-						if (lodObjName != "Unnamed")
-						{
-							lods.Add(new LodData
+							string lodObjName = lodNode?.Attributes?["ModelFile"]?.Value ?? "Unnamed";
+							int minSize = 0;
+							try
 							{
-								name = lodObjName,
-								minSize = minSize
-							});
+								minSize = int.Parse(lodNode?.Attributes?["minSize"]?.Value ?? "0");
+							}
+							catch (FormatException)
+							{
+								continue;
+							}
+							if (lodObjName != "Unnamed")
+							{
+								lods.Add(new LodData
+								{
+									name = lodObjName,
+									minSize = minSize
+								});
+							}
 						}
+					}
+					catch (XmlException)
+					{
+						Console.WriteLine($"Failed to parse GXML for model {guid:X}");
 					}
 					i += size;
 				}
 				else if (chunk == "GLBD")
 				{
 					int size = BitConverter.ToInt32(mdlBytes, i + 4);
-					for (int j = i + 8; j < i + 8 + size; j += 4)
+					for (int j = i + 8; j < i + 8 + size; j++)
 					{
 						if (Encoding.ASCII.GetString(mdlBytes, j, Math.Min(4, mdlBytes.Length - j)) == "GLB\0")
 						{
 							// Capture GLB file
 							int glbSize = BitConverter.ToInt32(mdlBytes, j + 4);
-							byte[] glbBytesPre = br.ReadBytes(glbSize);
-							glbBytesPre = mdlBytes[(j + 8)..(j + 8 + glbSize)];
+							// byte[] glbBytesPre = br.ReadBytes(glbSize);
+							byte[] glbBytes = mdlBytes[(j + 8)..(j + 8 + glbSize)];
+							byte[] glbBytesJson = mdlBytes[(j + 8)..(j + 8 + glbSize)]; // Copy this for additional safety in processing the JSON
 
 							// Fill the end of the JSON chunk with spaces, and replace non-printable characters with spaces.
-							uint JSONLength = BitConverter.ToUInt32(glbBytesPre, 0x0C);
+							uint JSONLength = BitConverter.ToUInt32(glbBytesJson, 0x0C);
 							for (int k = 0x14; k < 0x14 + JSONLength; k++)
 							{
-								if (glbBytesPre[k] < 0x20 || glbBytesPre[k] > 0x7E)
+								if (glbBytesJson[k] < 0x20 || glbBytesJson[k] > 0x7E)
 								{
-									glbBytesPre[k] = 0x20;
+									glbBytesJson[k] = 0x20;
 								}
 							}
 
-							uint binLength = BitConverter.ToUInt32(glbBytesPre, 0x14 + (int)JSONLength);
-							byte[] glbBinBytes = glbBytesPre[(0x14 + (int)JSONLength + 8)..(0x14 + (int)JSONLength + 8 + (int)binLength)];
+							uint binLength = BitConverter.ToUInt32(glbBytes, 0x14 + (int)JSONLength);
+							byte[] glbBinBytes = glbBytes[(0x14 + (int)JSONLength + 8)..(0x14 + (int)JSONLength + 8 + (int)binLength)];
 
-							JObject json = JObject.Parse(Encoding.UTF8.GetString(glbBytesPre, 0x14, (int)JSONLength).Trim());
+							JObject json = JObject.Parse(Encoding.UTF8.GetString(glbBytesJson, 0x14, (int)JSONLength).Trim());
 							JArray meshes = (JArray)json["meshes"]!;
 							JArray accessors = (JArray)json["accessors"]!;
 							JArray bufferViews = (JArray)json["bufferViews"]!;
+							JArray images = (JArray)json["images"]!;
+							JArray materials = (JArray)json["materials"]!;
 
 							SceneBuilder scene = new();
 							Dictionary<int, List<int>> meshIndexToSceneNodeIndex = [];
@@ -206,7 +215,7 @@ foreach (string file in allBglFiles)
 							foreach (JObject mesh in meshes.Cast<JObject>())
 							{
 								Console.WriteLine($"Processing mesh: {mesh["name"]?.Value<string>() ?? "UnnamedMesh"}");
-								MeshBuilder<VertexPositionNormalTangent, VertexTexture1, VertexEmpty> meshBuilder = GlbBuilder.BuildMesh(mesh, accessors, bufferViews, glbBinBytes);
+								MeshBuilder<VertexPositionNormalTangent, VertexTexture2, VertexEmpty> meshBuilder = GlbBuilder.BuildMesh(args[0], file, mesh, accessors, bufferViews, materials, images, glbBinBytes);
 								Console.WriteLine($"Built mesh with {meshBuilder.Primitives.Count} primitives.");
 								foreach (var prim in meshBuilder.Primitives)
 								{
@@ -223,10 +232,10 @@ foreach (string file in allBglFiles)
 									scaleFinal *= node.Scale == null ? Vector3.One : node.Scale.Value;
 								}
 
-								Console.WriteLine($"Final Transform - Translation: {translationFinal}, Rotation: {rotationFinal}, Scale: {scaleFinal}");
+								// Console.WriteLine($"Final Transform - Translation: {translationFinal}, Rotation: {rotationFinal}, Scale: {scaleFinal}");
 								// meshBuilder is your MeshBuilder<VertexPositionNormalTangent> (or whichever type)
-								var transform = Matrix4x4.CreateScale(scaleFinal) * 
-												Matrix4x4.CreateFromQuaternion(Quaternion.Normalize(rotationFinal)) * 
+								Matrix4x4 transform = Matrix4x4.CreateScale(scaleFinal) *
+												Matrix4x4.CreateFromQuaternion(rotationFinal) *
 												Matrix4x4.CreateTranslation(translationFinal);
 								scene.AddRigidMesh(meshBuilder, transform);
 							}
