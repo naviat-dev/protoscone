@@ -55,4 +55,31 @@ public class Terrain
 			return ((baseX + 180) << 14) + ((baseY + 90) << 6) + (y << 3) + x;
 		}
 	}
+	public static (double lat, double lon) GetLatLon(int tileIndex)
+	{
+		// Extract x, y, baseY, baseX from the tile index (reverse of GetTileIndex bit packing)
+		// GetTileIndex packs as: ((baseX + 180) << 14) + ((baseY + 90) << 6) + (y << 3) + x
+		int x = tileIndex & 0b111; // last 3 bits
+		int y = (tileIndex >> 3) & 0b111; // next 3 bits (not 6!)
+		int baseY = ((tileIndex >> 6) & 0b11111111) - 90; // next 8 bits, then subtract 90
+		int baseX = (tileIndex >> 14) - 180; // remaining bits, then subtract 180
+
+		// Determine the tileWidth for this latitude band
+		double lookup = Math.Abs(baseY);
+		double tileWidth = 0;
+		for (int i = 0; i < LatitudeIndex.Length; i++)
+		{
+			if (lookup >= LatitudeIndex[i, 0])
+			{
+				tileWidth = LatitudeIndex[i, 1];
+				break;
+			}
+		}
+
+		// Reconstruct the coordinates (reverse of GetTileIndex coordinate calculation)
+		double lat = baseY + y / 8.0;
+		double lon = baseX + x * tileWidth;
+
+		return (lat, lon);
+	}
 }

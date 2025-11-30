@@ -12,8 +12,7 @@ using SharpGLTF.Schema2;
 if (args.Length != 2)
 {
 	Console.WriteLine("Invalid number of arguments. Usage: protoscone.exe [path/to/input] [path/to/output]");
-	// return;
-	args = ["C:\\Users\\sriem\\Documents\\Aviation\\all-scenery", "C:\\Users\\sriem\\Downloads"];
+	return;
 }
 
 // Display the provided arguments
@@ -30,21 +29,12 @@ if (Directory.Exists(args[0]) == false)
 }
 
 // If the arguments are valid, proceed with the main logic
-string tempPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Temp", "protoscone");
-
-if (!Directory.Exists(tempPath))
-{
-	_ = Directory.CreateDirectory(tempPath);
-}
 
 if (!Directory.Exists(args[1]))
 {
 	_ = Directory.CreateDirectory(args[1]);
 }
 string[] allBglFiles = Directory.GetFiles(args[0], "*.bgl", SearchOption.AllDirectories);
-List<Guid> sceneryGuids = [];
-HashSet<Guid> modelGuids = [];
-Console.WriteLine($"Found files:\n{string.Join(",\n", allBglFiles)}");
 Dictionary<Guid, List<LibraryObject>> libraryObjects = [];
 List<ModelData> modelDatas = [];
 foreach (string file in allBglFiles)
@@ -68,9 +58,6 @@ foreach (string file in allBglFiles)
 	// Skip 0x38-byte header
 	_ = br.BaseStream.Seek(0x38, SeekOrigin.Begin);
 
-	int foundMdlData = 0;
-	int foundSceneryObj = 0;
-
 	List<int> mdlDataOffsets = [];
 	List<int> sceneryObjectOffsets = [];
 	for (int i = 0; i < recordCt; i++)
@@ -83,14 +70,11 @@ foreach (string file in allBglFiles)
 		uint recSize = br.ReadUInt32();
 		if (recType == 0x002B) // ModelData
 		{
-			foundMdlData++;
 			mdlDataOffsets.Add((int)startSubsection);
 		}
 		else if (recType == 0x0025) // SceneryObject
 		{
-			foundSceneryObj++;
 			sceneryObjectOffsets.Add((int)startSubsection);
-			Console.WriteLine($"Found SceneryObject at offset 0x{startSubsection:X}, total found: {foundSceneryObj}");
 		}
 	}
 
@@ -98,11 +82,9 @@ foreach (string file in allBglFiles)
 	List<(int offset, int size)> sceneryObjectSubrecords = [];
 	foreach (int sceneryOffset in sceneryObjectOffsets)
 	{
-		_ = br.BaseStream.Seek(sceneryOffset + 4, SeekOrigin.Begin);
-		int subrecCount = br.ReadInt32();
+		_ = br.BaseStream.Seek(sceneryOffset + 8, SeekOrigin.Begin);
 		int subrecOffset = (int)br.ReadUInt32();
 		int size = (int)br.ReadUInt32();
-		Console.WriteLine($"SceneryObject Subrecord Count: {subrecCount}, Offset: 0x{subrecOffset:X}, Size: {size}");
 		sceneryObjectSubrecords.Add((subrecOffset, size));
 	}
 
@@ -139,7 +121,7 @@ foreach (string file in allBglFiles)
 			ushort bank = br.ReadUInt16();
 			ushort heading = br.ReadUInt16();
 			short imageComplexity = br.ReadInt16();
-			Guid guidEmpty = new(br.ReadBytes(16));
+			_ = br.BaseStream.Seek(16, SeekOrigin.Current); // Skip GUID empty field
 			Guid guid = new(br.ReadBytes(16));
 			double scale = br.ReadSingle(); // Read as float from file, store as double for precision
 			_ = br.BaseStream.Seek(2, SeekOrigin.Current); // There is an unknown 2-byte field here
@@ -162,30 +144,28 @@ foreach (string file in allBglFiles)
 			{
 				libraryObjects[guid] = [];
 			}
-			sceneryGuids.Add(guid);
 			libraryObjects[guid].Add(libObj);
-			Console.WriteLine($"{guid}\t{guidEmpty}\t{libObj.size}\t{libObj.longitude:F6}\t{libObj.latitude:F6}\t{libObj.altitude}\t[{string.Join(",", libObj.flags)}]\t{libObj.pitch:F2}\t{libObj.bank:F2}\t{libObj.heading:F2}\t{libObj.imageComplexity}\t{libObj.scale}");
+			Console.WriteLine($"{guid}\t{libObj.size}\t{libObj.longitude:F6}\t{libObj.latitude:F6}\t{libObj.altitude}\t[{string.Join(",", libObj.flags)}]\t{libObj.pitch:F2}\t{libObj.bank:F2}\t{libObj.heading:F2}\t{libObj.imageComplexity}\t{libObj.scale}");
 			bytesRead += size;
 		}
 	}
 
+	Dictionary<int, List<string>> finalPlacementsByTile = [];
 	// Parse ModelData subrecords
 	List<(int offset, int size)> modelDataSubrecords = [];
 	foreach (int modelDataOffset in mdlDataOffsets)
 	{
-		_ = br.BaseStream.Seek(modelDataOffset + 4, SeekOrigin.Begin);
-		int subrecCount = br.ReadInt32();
+		_ = br.BaseStream.Seek(modelDataOffset + 8, SeekOrigin.Begin);
 		int subrecOffset = br.ReadInt32();
 		int size = br.ReadInt32();
 		modelDataSubrecords.Add((subrecOffset, size));
 	}
 
-	int objectsRead = 0;
 	foreach ((int subOffset, int subSize) in modelDataSubrecords)
 	{
 		// Reset per-subrecord counters so all subrecords are processed
+		int objectsRead = 0;
 		bytesRead = 0;
-		objectsRead = 0;
 
 		while (bytesRead < subSize)
 		{
@@ -220,7 +200,7 @@ foreach (string file in allBglFiles)
 						XmlNodeList lodNodes = xmlDoc.GetElementsByTagName("LOD");
 						foreach (XmlNode lodNode in lodNodes)
 						{
-							string lodObjName = lodNode?.Attributes?["ModelFile"]?.Value ?? "Unnamed";
+							string lodObjName = lodNode?.Attributes?["ModelFile"]?.Value.Replace(".gltf", "") ?? "Unnamed";
 							int minSize = 0;
 							try
 							{
@@ -293,10 +273,10 @@ foreach (string file in allBglFiles)
 								if (node["mesh"] != null)
 								{
 									int meshIndex = node["mesh"]!.Value<int>();
-									if (!meshIndexToSceneNodeIndex.TryGetValue(meshIndex, out List<int>? value))
+									if (!meshIndexToSceneNodeIndex.TryGetValue(meshIndex, out List<int>? valueMesh))
 									{
-										value = [];
-										meshIndexToSceneNodeIndex[meshIndex] = value;
+										valueMesh = [];
+										meshIndexToSceneNodeIndex[meshIndex] = valueMesh;
 									}
 									meshIndexToSceneNodeIndex[meshIndex].Add(k);
 								}
@@ -358,63 +338,68 @@ foreach (string file in allBglFiles)
 					i += size;
 				}
 			}
-			modelDatas.Add(new ModelData
+			ModelData current = new()
 			{
 				guid = guid,
 				name = name,
 				modelObjects = modelObjects,
-			});
-			modelGuids.Add(guid);
+			};
+			if (libraryObjects.TryGetValue(current.guid, out List<LibraryObject>? value))
+			{
+				int[] tileIndices = [.. value.Select(lo => Terrain.GetTileIndex(lo.latitude, lo.longitude)).Distinct()];
+				foreach (int tile in tileIndices)
+				{
+					(double lat, double lon) = Terrain.GetLatLon(tile);
+					string lonHemi = lon >= 0 ? "e" : "w";
+					string latHemi = lat >= 0 ? "n" : "s";
+					string path = $"{args[1]}/Objects/{lonHemi}{Math.Abs(Math.Floor(lon / 10)) * 10:000}{latHemi}{Math.Abs(Math.Floor(lat / 10)) * 10:00}/{lonHemi}{Math.Abs(Math.Floor(lon)):000}{latHemi}{Math.Abs(Math.Floor(lat)):00}";
+					if (!Directory.Exists(path))
+					{
+						_ = Directory.CreateDirectory(path);
+					}
+					foreach (ModelObject modelObj in current.modelObjects)
+					{
+						string outGlbPath = Path.Combine(path, $"{modelObj.name}.glb");
+						modelObj.model.ToGltf2().SaveGLB(outGlbPath, new WriteSettings { ImageWriting = ResourceWriteMode.SatelliteFile });
+					}
+				}
+				int[] scales = [.. libraryObjects[current.guid].Select(lo => (int)lo.scale).Distinct()];
+				string activeName = "";
+				if (current.modelObjects.Count == 1 && scales.Length == 0 && current.lightObjects.Count == 0)
+				{
+					activeName = $"{current.modelObjects[0].name}.glb";
+				}
+				else
+				{
+					XmlDocument doc = new();
+					XmlElement root = doc.CreateElement("PropertyList");
+					root.AppendChild(doc.CreateComment("Generated by Scone"));
+					foreach (ModelObject modelObj in current.modelObjects)
+					{
+						XmlElement objElem = doc.CreateElement("model");
+						objElem.AppendChild(doc.CreateElement("name"))!.InnerText = modelObj.name;
+						objElem.AppendChild(doc.CreateElement("path"))!.InnerText = $"{modelObj.name}.glb";
+						root.AppendChild(objElem);
+					}
+					Console.WriteLine(root.OuterXml);
+					// activeName = $"{modelData.modelObjects[0].name}-{}"
+				}
+				if (!finalPlacementsByTile.ContainsKey(Terrain.GetTileIndex(value[0].latitude, value[0].longitude)))
+				{
+					finalPlacementsByTile[Terrain.GetTileIndex(value[0].latitude, value[0].longitude)] = [];
+				}
+				foreach (LibraryObject libObj in value)
+				{
+					string placementStr = $"OBJECT_STATIC {activeName} {libObj.longitude:F6} {libObj.latitude:F6} {libObj.altitude} {libObj.heading:F2} {libObj.pitch:F2} {libObj.bank:F2}";
+					finalPlacementsByTile[Terrain.GetTileIndex(libObj.latitude, libObj.longitude)].Add(placementStr);
+				}
+			}
 			bytesRead += (int)modelDataSize + 24;
 			objectsRead++;
 		}
 	}
 }
 Console.WriteLine($"Total LibraryObjects parsed: {libraryObjects.Count}. Total ModelDatas parsed: {modelDatas.Count}.");
-
-// We are more likely to have LibraryObjects that don't have corresponding ModelData than vice versa, so iterate over ModelDatas
-Dictionary<int, List<string>> finalPlacementsByTile = [];
-foreach (ModelData modelData in modelDatas)
-{
-	if (libraryObjects.TryGetValue(modelData.guid, out List<LibraryObject>? value))
-	{
-		foreach (ModelObject modelObj in modelData.modelObjects)
-		{
-			string outGlbPath = Path.Combine(args[1], $"{modelObj.name}.glb");
-			modelObj.model.ToGltf2().SaveGLB(outGlbPath, new WriteSettings { ImageWriting = ResourceWriteMode.SatelliteFile });
-		}
-		int[] scales = [.. libraryObjects[modelData.guid].Select(lo => (int)lo.scale).Distinct()];
-		string activeName = "";
-		if (modelData.modelObjects.Count == 1 && scales.Length == 0 && modelData.lightObjects.Count == 0)
-		{
-			activeName = $"{modelData.modelObjects[0].name}.glb";
-		}
-		else
-		{
-			XmlDocument doc = new();
-			XmlElement root = doc.CreateElement("PropertyList");
-			root.AppendChild(doc.CreateComment("Generated by Scone"));
-			foreach (ModelObject modelObj in modelData.modelObjects)
-			{
-				XmlElement objElem = doc.CreateElement("model");
-				objElem.AppendChild(doc.CreateElement("name"))!.InnerText = modelObj.name;
-				objElem.AppendChild(doc.CreateElement("path"))!.InnerText = $"{modelObj.name}.glb";
-				root.AppendChild(objElem);
-			}
-			Console.WriteLine(root.OuterXml);
-			// activeName = $"{modelData.modelObjects[0].name}-{}"
-		}
-		if (!finalPlacementsByTile.ContainsKey(Terrain.GetTileIndex(value[0].latitude, value[0].longitude)))
-		{
-			finalPlacementsByTile[Terrain.GetTileIndex(value[0].latitude, value[0].longitude)] = [];
-		}
-		foreach (LibraryObject libObj in value)
-		{
-			string placementStr = $"OBJECT_STATIC {activeName} {libObj.longitude:F6} {libObj.latitude:F6} {libObj.altitude} {libObj.heading:F2} {libObj.pitch:F2} {libObj.bank:F2}";
-			finalPlacementsByTile[Terrain.GetTileIndex(libObj.latitude, libObj.longitude)].Add(placementStr);
-		}
-	}
-}
 
 enum Flags
 {
