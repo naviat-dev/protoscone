@@ -66,13 +66,13 @@ public class GlbBuilder
 		return node;
 	}
 
-	public static MeshBuilder<VertexPositionNormalTangent, VertexTexture2, VertexEmpty> BuildMesh(JObject meshJson, JArray accessorsJson, JArray bufferViewsJson, JArray materialsJson, JArray imagesJson, byte[] glbBinBytes)
+	public static MeshBuilder<VertexPositionNormalTangent, VertexTexture2, VertexEmpty> BuildMesh(string sourcePath, string sourceBgl, JObject meshJson, JArray accessorsJson, JArray bufferViewsJson, JArray materialsJson, JArray imagesJson, byte[] glbBinBytes)
 	{
 
 		MeshBuilder<VertexPositionNormalTangent, VertexTexture2, VertexEmpty> mesh = new(meshJson["name"]?.Value<string>() ?? "UnnamedMesh");
 		foreach (JObject primJson in ((JArray)meshJson["primitives"]!).Cast<JObject>())
 		{
-			PrimitiveBuilder<MaterialBuilder, VertexPositionNormalTangent, VertexTexture2, VertexEmpty> prim = mesh.UsePrimitive(BuildMaterial((JObject)materialsJson[primJson["material"]!.Value<int>()], (JArray)imagesJson, Array.Empty<string>()));
+			PrimitiveBuilder<MaterialBuilder, VertexPositionNormalTangent, VertexTexture2, VertexEmpty> prim = mesh.UsePrimitive(BuildMaterial((JObject)materialsJson[primJson["material"]!.Value<int>()], imagesJson, sourcePath, sourceBgl));
 			JObject attributes = (JObject)primJson["attributes"]!;
 			PrimData data = new();
 
@@ -169,7 +169,7 @@ public class GlbBuilder
 		return mesh;
 	}
 
-	private static MaterialBuilder BuildMaterial(JObject materialJson, JArray imagesJson, string[] imagePaths)
+	private static MaterialBuilder BuildMaterial(JObject materialJson, JArray imagesJson, string sourcePath, string sourceBgl)
 	{
 		MaterialBuilder material = MaterialBuilder.CreateDefault();
 		material.Name = materialJson["name"]?.Value<string>() ?? "UnnamedMaterial";
@@ -184,6 +184,43 @@ public class GlbBuilder
 												   colorFactor[2].Value<float>(),
 												   colorFactor[3].Value<float>()));
 			}
+			if (pbr["baseColorTexture"] != null)
+			{
+				int texIndex = pbr["baseColorTexture"]!["index"]!.Value<int>();
+				int texCoordSet = pbr["baseColorTexture"]!["texCoord"]?.Value<int>() ?? 0;
+				string mostLikelyMatch = "";
+				if (texIndex >= 0 && texIndex < imagesJson.Count)
+				{
+					if (imagesJson[texIndex]["uri"] != null)
+					{
+						string[] imageMatches = Directory.GetFiles(sourcePath, $"*{imagesJson[texIndex]["uri"]!.Value<string>()!}", SearchOption.AllDirectories);
+						int mostLikelyMatchScore = -1;
+						foreach (string match in imageMatches)
+						{
+							int i = 0;
+
+							while (i < Math.Min(match.Length, sourceBgl.Length) && match[i] == sourceBgl[i])
+								i++;
+
+							if (i > mostLikelyMatchScore)
+							{
+								mostLikelyMatchScore = i;
+								mostLikelyMatch = match;
+							}
+						}
+					}
+					string imageName = imagesJson[texIndex]["name"]?.Value<string>() ?? "UnnamedImage";
+
+					Console.WriteLine($"Loading base color texture from: {mostLikelyMatch} (UV set {texCoordSet})");
+					// Use URI reference instead of embedding
+
+					material.UseChannel(KnownChannel.BaseColor)
+							.UseTexture()
+							.WithPrimaryImage(mostLikelyMatch)
+							.WithCoordinateSet(texCoordSet);
+
+				}
+			}
 			if (pbr["metallicFactor"] != null || pbr["roughnessFactor"] != null)
 			{
 				material.WithMetallicRoughness(pbr["metallicFactor"]?.Value<float>() ?? 0, pbr["roughnessFactor"]?.Value<float>() ?? 0);
@@ -191,26 +228,135 @@ public class GlbBuilder
 			if (pbr["metallicRoughnessTexture"] != null)
 			{
 				int texIndex = pbr["metallicRoughnessTexture"]!["index"]!.Value<int>();
-				// int texCoordSet = pbr["metallicRoughnessTexture"]!["texCoord"]!.Value<int>();
-				
-				// ImageBuilder image = new(); // Placeholder for actual image loading
-				// material.WithChannelImage(KnownChannel.MetallicRoughness, imagesJson[texIndex]["name"]!.Value<string>()!);
+				int texCoordSet = pbr["metallicRoughnessTexture"]!["texCoord"]?.Value<int>() ?? 0;
+				string mostLikelyMatch = "";
+				if (texIndex >= 0 && texIndex < imagesJson.Count)
+				{
+					if (imagesJson[texIndex]["uri"] != null)
+					{
+						string[] imageMatches = Directory.GetFiles(sourcePath, $"*{imagesJson[texIndex]["uri"]!.Value<string>()!}", SearchOption.AllDirectories);
+						int mostLikelyMatchScore = -1;
+						foreach (string match in imageMatches)
+						{
+							int i = 0;
+
+							while (i < Math.Min(match.Length, sourceBgl.Length) && match[i] == sourceBgl[i])
+								i++;
+
+							if (i > mostLikelyMatchScore)
+							{
+								mostLikelyMatchScore = i;
+								mostLikelyMatch = match;
+							}
+						}
+					}
+					string imageName = imagesJson[texIndex]["name"]?.Value<string>() ?? "UnnamedImage";
+
+					material.UseChannel(KnownChannel.MetallicRoughness)
+						.UseTexture()
+						.WithPrimaryImage(mostLikelyMatch)
+						.WithCoordinateSet(texCoordSet);
+				}
 			}
 		}
 		if (materialJson["normalTexture"] != null)
 		{
-			JObject normalTex = (JObject)materialJson["normalTexture"]!;
-			int texIndex = normalTex["index"]!.Value<int>();
+			int texIndex = materialJson["normalTexture"]!["index"]!.Value<int>();
+			int texCoordSet = materialJson["normalTexture"]!["texCoord"]?.Value<int>() ?? 0;
+			string mostLikelyMatch = "";
+			if (texIndex >= 0 && texIndex < imagesJson.Count)
+			{
+				if (imagesJson[texIndex]["uri"] != null)
+				{
+					string[] imageMatches = Directory.GetFiles(sourcePath, $"*{imagesJson[texIndex]["uri"]!.Value<string>()!}", SearchOption.AllDirectories);
+					int mostLikelyMatchScore = -1;
+					foreach (string match in imageMatches)
+					{
+						int i = 0;
+
+						while (i < Math.Min(match.Length, sourceBgl.Length) && match[i] == sourceBgl[i])
+							i++;
+
+						if (i > mostLikelyMatchScore)
+						{
+							mostLikelyMatchScore = i;
+							mostLikelyMatch = match;
+						}
+					}
+				}
+				string imageName = imagesJson[texIndex]["name"]?.Value<string>() ?? "UnnamedImage";
+
+				material.UseChannel(KnownChannel.Normal)
+					.UseTexture()
+					.WithPrimaryImage(mostLikelyMatch)
+					.WithCoordinateSet(texCoordSet);
+			}
 		}
 		if (materialJson["occlusionTexture"] != null)
 		{
-			JObject occTex = (JObject)materialJson["occlusionTexture"]!;
-			int texIndex = occTex["index"]!.Value<int>();
+			int texIndex = materialJson["occlusionTexture"]!["index"]!.Value<int>();
+			int texCoordSet = materialJson["occlusionTexture"]!["texCoord"]?.Value<int>() ?? 0;
+			string mostLikelyMatch = "";
+			if (texIndex >= 0 && texIndex < imagesJson.Count)
+			{
+				if (imagesJson[texIndex]["uri"] != null)
+				{
+					string[] imageMatches = Directory.GetFiles(sourcePath, $"*{imagesJson[texIndex]["uri"]!.Value<string>()!}", SearchOption.AllDirectories);
+					int mostLikelyMatchScore = -1;
+					foreach (string match in imageMatches)
+					{
+						int i = 0;
+
+						while (i < Math.Min(match.Length, sourceBgl.Length) && match[i] == sourceBgl[i])
+							i++;
+
+						if (i > mostLikelyMatchScore)
+						{
+							mostLikelyMatchScore = i;
+							mostLikelyMatch = match;
+						}
+					}
+				}
+				string imageName = imagesJson[texIndex]["name"]?.Value<string>() ?? "UnnamedImage";
+
+				material.UseChannel(KnownChannel.Occlusion)
+					.UseTexture()
+					.WithPrimaryImage(mostLikelyMatch)
+					.WithCoordinateSet(texCoordSet);
+			}
 		}
 		if (materialJson["emissiveTexture"] != null)
 		{
-			JObject emissiveTex = (JObject)materialJson["emissiveTexture"]!;
-			int texIndex = emissiveTex["index"]!.Value<int>();
+			int texIndex = materialJson["emissiveTexture"]!["index"]!.Value<int>();
+			int texCoordSet = materialJson["emissiveTexture"]!["texCoord"]?.Value<int>() ?? 0;
+			string mostLikelyMatch = "";
+			if (texIndex >= 0 && texIndex < imagesJson.Count)
+			{
+				if (imagesJson[texIndex]["uri"] != null)
+				{
+					string[] imageMatches = Directory.GetFiles(sourcePath, $"*{imagesJson[texIndex]["uri"]!.Value<string>()!}", SearchOption.AllDirectories);
+					int mostLikelyMatchScore = -1;
+					foreach (string match in imageMatches)
+					{
+						int i = 0;
+
+						while (i < Math.Min(match.Length, sourceBgl.Length) && match[i] == sourceBgl[i])
+							i++;
+
+						if (i > mostLikelyMatchScore)
+						{
+							mostLikelyMatchScore = i;
+							mostLikelyMatch = match;
+						}
+					}
+				}
+				string imageName = imagesJson[texIndex]["name"]?.Value<string>() ?? "UnnamedImage";
+
+				material.UseChannel(KnownChannel.Emissive)
+					.UseTexture()
+					.WithPrimaryImage(mostLikelyMatch)
+					.WithCoordinateSet(texCoordSet);
+			}
 		}
 		if (materialJson["emissiveFactor"] != null)
 		{

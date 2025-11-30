@@ -37,10 +37,10 @@ if (!Directory.Exists(tempPath))
 }
 
 string[] allBglFiles = Directory.GetFiles(args[0], "*.bgl", SearchOption.AllDirectories);
-HashSet<UInt128> sceneryGuids = [];
-HashSet<UInt128> modelGuids = [];
+List<Guid> sceneryGuids = [];
+HashSet<Guid> modelGuids = [];
 Console.WriteLine($"Found files:\n{string.Join(",\n", allBglFiles)}");
-Dictionary<UInt128, List<LibraryObject>> libraryObjects = [];
+Dictionary<Guid, List<LibraryObject>> libraryObjects = [];
 List<ModelData> modelDatas = [];
 foreach (string file in allBglFiles)
 {
@@ -112,19 +112,19 @@ foreach (string file in allBglFiles)
 		{
 			_ = br.BaseStream.Seek(subOffset + (24 * objectsRead), SeekOrigin.Begin);
 			byte[] guidBytes = br.ReadBytes(16);
-			UInt128 guid = new(BitConverter.ToUInt64(guidBytes, 8), BitConverter.ToUInt64(guidBytes, 0));
+			Guid guid = new(guidBytes);
 			uint startModelDataOffset = br.ReadUInt32();
 			uint modelDataSize = br.ReadUInt32();
 			_ = br.BaseStream.Seek(subOffset + startModelDataOffset, SeekOrigin.Begin);
 			byte[] mdlBytes = br.ReadBytes((int)modelDataSize);
-			string name = $"{guid:X}";
+			string name = "";
 			List<LodData> lods = [];
 			string chunkID = Encoding.ASCII.GetString(mdlBytes, 0, Math.Min(4, mdlBytes.Length));
 			if (chunkID != "RIFF")
 			{
-				Console.WriteLine($"Unexpected model data format for GUID {guid:X}: missing RIFF header");
 				break;
 			}
+			List<ModelObject> modelObjects = [];
 			// Enter this model and get LOD info, GLB files, and mesh data
 			for (int i = 8; i < mdlBytes.Length; i += 4)
 			{
@@ -137,7 +137,7 @@ foreach (string file in allBglFiles)
 					{
 						XmlDocument xmlDoc = new();
 						xmlDoc.LoadXml(gxmlContent);
-						name = xmlDoc.GetElementsByTagName("ModelInfo")[0]?.Attributes?["name"]?.Value ?? $"{guid:X}";
+						name = xmlDoc.GetElementsByTagName("ModelInfo")[0]?.Attributes?["name"]?.Value ?? "Unnamed_Model";
 						XmlNodeList lodNodes = xmlDoc.GetElementsByTagName("LOD");
 						foreach (XmlNode lodNode in lodNodes)
 						{
@@ -242,6 +242,9 @@ foreach (string file in allBglFiles)
 									scaleFinal *= node.Scale == null ? Vector3.One : node.Scale.Value;
 								}
 
+								float avgScale = (scaleFinal.X + scaleFinal.Y + scaleFinal.Z) / 3.0f;
+								scaleFinal = new Vector3(avgScale, avgScale, avgScale);
+
 								// Console.WriteLine($"Final Transform - Translation: {translationFinal}, Rotation: {rotationFinal}, Scale: {scaleFinal}");
 								// meshBuilder is your MeshBuilder<VertexPositionNormalTangent> (or whichever type)
 								Matrix4x4 transform = Matrix4x4.CreateScale(scaleFinal) *
@@ -252,8 +255,13 @@ foreach (string file in allBglFiles)
 
 							// Write GLB with unique filename (include index to avoid overwrites)
 							string safeName = name;
-							string outName = glbIndex == 0 ? safeName : $"{safeName}_glb{glbIndex}";
-							scene.ToGltf2().SaveGLB(Path.Combine(args[0], $"{outName}.glb"));
+							string outName = glbIndex < lods.Count ? lods[glbIndex].name : $"{safeName}_glb{glbIndex}";
+							modelObjects.Add(new ModelObject
+							{
+								name = outName,
+								minSize = glbIndex < lods.Count ? lods[glbIndex].minSize : 0,
+								model = scene
+							});
 							glbIndex++;
 
 							// Advance j past this GLB record (type[4] + size[4] + payload[glbSize])
@@ -275,7 +283,6 @@ foreach (string file in allBglFiles)
 			{
 				guid = guid,
 				name = name,
-				lods = lods
 			});
 			modelGuids.Add(guid);
 			bytesRead += (int)modelDataSize + 24;
@@ -301,14 +308,15 @@ foreach (string file in allBglFiles)
 		while (bytesRead < subSize)
 		{
 			_ = br.BaseStream.Seek(subOffset + bytesRead, SeekOrigin.Begin);
-			ushort id = br.ReadUInt16(), size = br.ReadUInt16();
+			ushort id = br.ReadUInt16(), size = br.ReadUInt16();a
 			if (id != 0xB) // LibraryObject
 			{
 				Console.WriteLine($"Unexpected subrecord type at offset 0x{subOffset + bytesRead:X}: 0x{id:X4}, skipping {size} bytes");
 				_ = br.BaseStream.Seek(subOffset + size, SeekOrigin.Begin);
-				bytesRead += size;
+				bytesRead += size + 4;
 				continue;
 			}
+			_ = br.BaseStream.Seek(2, SeekOrigin.Current);
 			uint longitude = br.ReadUInt32(), latitude = br.ReadUInt32();
 			short altitude = br.ReadInt16();
 			byte[] flagsBytes = br.ReadBytes(6);
@@ -327,9 +335,8 @@ foreach (string file in allBglFiles)
 			short imageComplexity = br.ReadInt16();
 			_ = br.BaseStream.Seek(2, SeekOrigin.Current); // There is an unknown 2-byte field here
 			byte[] guidEmptyBytes = br.ReadBytes(16);
-			UInt128 guidEmpty = new(BitConverter.ToUInt64(guidEmptyBytes, 8), BitConverter.ToUInt64(guidEmptyBytes, 0));
 			byte[] guidBytes = br.ReadBytes(16);
-			UInt128 guid = new(BitConverter.ToUInt64(guidBytes, 8), BitConverter.ToUInt64(guidBytes, 0));
+			Guid guid = new(guidBytes);
 			double scale = br.ReadSingle(); // Read as float from file, store as double for precision
 			LibraryObject libObj = new()
 			{
@@ -343,7 +350,6 @@ foreach (string file in allBglFiles)
 				bank = Math.Round(bank * (360.0 / 65536.0), 3),
 				heading = Math.Round(heading * (360.0 / 65536.0), 3),
 				imageComplexity = imageComplexity,
-				guidEmpty = guidEmpty,
 				guid = guid,
 				scale = Math.Round(scale + 1, 3)
 			};
@@ -353,16 +359,16 @@ foreach (string file in allBglFiles)
 			}
 			sceneryGuids.Add(guid);
 			libraryObjects[guid].Add(libObj);
-			Console.WriteLine($"{libObj.guid:X4}\t{libObj.size}\t{libObj.longitude:F6}\t{libObj.latitude:F6}\t{libObj.altitude}\t[{string.Join(",", libObj.flags)}]\t{libObj.pitch:F2}\t{libObj.bank:F2}\t{libObj.heading:F2}\t{libObj.imageComplexity}\t{libObj.scale}");
+			Console.WriteLine($"{libObj.guid}\t{libObj.size}\t{libObj.longitude:F6}\t{libObj.latitude:F6}\t{libObj.altitude}\t[{string.Join(",", libObj.flags)}]\t{libObj.pitch:F2}\t{libObj.bank:F2}\t{libObj.heading:F2}\t{libObj.imageComplexity}\t{libObj.scale}");
 			bytesRead += size;
 		}
 	}
 }
 Console.WriteLine($"Total LibraryObjects parsed: {libraryObjects.Count}. Total ModelDatas parsed: {modelDatas.Count}.");
-File.WriteAllText(Path.Combine(args[0], "scenery_guids.txt"), string.Join(Environment.NewLine, sceneryGuids.Select(g => g.ToString("X"))));
-File.WriteAllText(Path.Combine(args[0], "model_guids.txt"), string.Join(Environment.NewLine, modelGuids.Select(g => g.ToString("X"))));
+File.WriteAllText(Path.Combine(args[0], "scenery_guids.txt"), string.Join(Environment.NewLine, sceneryGuids.OrderBy(g => g)));
+File.WriteAllText(Path.Combine(args[0], "model_guids.txt"), string.Join(Environment.NewLine, modelGuids.OrderBy(g => g)));
 
-// We are more likely to have LibraryObjects that don't have corresponding ModelData than vice versa, so iterate over modelDatas
+// We are more likely to have LibraryObjects that don't have corresponding ModelData than vice versa, so iterate over ModelDatas
 // Group this by the index of the tile to remove duplicates and simpler writing later
 Dictionary<int, string> modelDatasByTile = [];
 foreach (ModelData modelData in modelDatas)
@@ -430,8 +436,7 @@ struct LibraryObject
 	public double bank;
 	public double heading;
 	public int imageComplexity;
-	public UInt128 guidEmpty;
-	public UInt128 guid;
+	public Guid guid;
 	public double scale;
 }
 
@@ -444,24 +449,14 @@ struct LodData
 struct ModelObject
 {
 	public string name;
-	public List<string> textures;
-	public byte[] meshData;
+	public int minSize;
+	public SceneBuilder model;
 }
 
 struct ModelData
 {
-	public UInt128 guid;
+	public Guid guid;
 	public string name;
-	public List<LodData> lods;
-	public List<string> textures;
+	public List<ModelObject> modelObjects;
 	public Dictionary<int, int> scales;
-}
-
-partial class Program
-{
-	[System.Text.RegularExpressions.GeneratedRegex(@"^TEXCOORD_\d+$")]
-	private static partial System.Text.RegularExpressions.Regex TexcoordRegex();
-
-	[System.Text.RegularExpressions.GeneratedRegex(@"^COLOR_\d+$")]
-	private static partial System.Text.RegularExpressions.Regex ColorRegex();
 }
