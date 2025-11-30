@@ -1,10 +1,12 @@
 ﻿using System.Numerics;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Xml;
 using Newtonsoft.Json.Linq;
 using SharpGLTF.Geometry;
 using SharpGLTF.Geometry.VertexTypes;
 using SharpGLTF.Scenes;
+using SharpGLTF.Schema2;
 
 // Argument validation and processing
 if (args.Length != 2)
@@ -28,7 +30,6 @@ if (Directory.Exists(args[0]) == false)
 }
 
 // If the arguments are valid, proceed with the main logic
-double[,] LatitudeIndex = { { 89, 12 }, { 86, 4 }, { 83, 2 }, { 76, 1 }, { 62, 0.5 }, { 22, 0.25 }, { 0, 0.125 } };
 string tempPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Temp", "protoscone");
 
 if (!Directory.Exists(tempPath))
@@ -36,6 +37,10 @@ if (!Directory.Exists(tempPath))
 	_ = Directory.CreateDirectory(tempPath);
 }
 
+if (!Directory.Exists(args[1]))
+{
+	_ = Directory.CreateDirectory(args[1]);
+}
 string[] allBglFiles = Directory.GetFiles(args[0], "*.bgl", SearchOption.AllDirectories);
 List<Guid> sceneryGuids = [];
 HashSet<Guid> modelGuids = [];
@@ -137,7 +142,7 @@ foreach (string file in allBglFiles)
 					{
 						XmlDocument xmlDoc = new();
 						xmlDoc.LoadXml(gxmlContent);
-						name = xmlDoc.GetElementsByTagName("ModelInfo")[0]?.Attributes?["name"]?.Value ?? "Unnamed_Model";
+						name = xmlDoc.GetElementsByTagName("ModelInfo")[0]?.Attributes?["name"]?.Value.Replace(".gltf", "") ?? "Unnamed_Model";
 						XmlNodeList lodNodes = xmlDoc.GetElementsByTagName("LOD");
 						foreach (XmlNode lodNode in lodNodes)
 						{
@@ -258,7 +263,7 @@ foreach (string file in allBglFiles)
 							string outName = glbIndex < lods.Count ? lods[glbIndex].name : $"{safeName}_glb{glbIndex}";
 							modelObjects.Add(new ModelObject
 							{
-								name = outName,
+								name = outName.Replace(" ", "_"),
 								minSize = glbIndex < lods.Count ? lods[glbIndex].minSize : 0,
 								model = scene
 							});
@@ -283,6 +288,7 @@ foreach (string file in allBglFiles)
 			{
 				guid = guid,
 				name = name,
+				modelObjects = modelObjects,
 			});
 			modelGuids.Add(guid);
 			bytesRead += (int)modelDataSize + 24;
@@ -296,32 +302,33 @@ foreach (string file in allBglFiles)
 	{
 		_ = br.BaseStream.Seek(sceneryOffset + 4, SeekOrigin.Begin);
 		int subrecCount = br.ReadInt32();
-		int subrecOffset = br.ReadInt32();
-		int size = br.ReadInt32();
+		int subrecOffset = (int)br.ReadUInt32();
+		int size = (int)br.ReadUInt32();
 		Console.WriteLine($"SceneryObject Subrecord Count: {subrecCount}, Offset: 0x{subrecOffset:X}, Size: {size}");
 		sceneryObjectSubrecords.Add((subrecOffset, size));
 	}
 
-	bytesRead = 0;
 	foreach ((int subOffset, int subSize) in sceneryObjectSubrecords)
 	{
+		bytesRead = 0;
 		while (bytesRead < subSize)
 		{
 			_ = br.BaseStream.Seek(subOffset + bytesRead, SeekOrigin.Begin);
-			ushort id = br.ReadUInt16(), size = br.ReadUInt16();a
-			if (id != 0xB) // LibraryObject
+			ushort id = br.ReadUInt16();
+			if (id != 0x0B) // LibraryObject
 			{
-				Console.WriteLine($"Unexpected subrecord type at offset 0x{subOffset + bytesRead:X}: 0x{id:X4}, skipping {size} bytes");
-				_ = br.BaseStream.Seek(subOffset + size, SeekOrigin.Begin);
-				bytesRead += size + 4;
+				uint skip = br.ReadUInt16();
+				Console.WriteLine($"Unexpected subrecord type at offset 0x{subOffset + bytesRead:X}: 0x{id:X4}, skipping {skip} bytes");
+				_ = br.BaseStream.Seek(subOffset + skip, SeekOrigin.Begin);
+				bytesRead += (int)skip;
 				continue;
 			}
-			_ = br.BaseStream.Seek(2, SeekOrigin.Current);
+			ushort size = br.ReadUInt16();
 			uint longitude = br.ReadUInt32(), latitude = br.ReadUInt32();
 			short altitude = br.ReadInt16();
 			byte[] flagsBytes = br.ReadBytes(6);
 			List<Flags> flagsList = [];
-			for (int j = 0; j < flagsBytes.Length && j < 7; j++)
+			for (int j = 0; j < flagsBytes.Length; j++)
 			{
 				if (flagsBytes[j] != 0)
 				{
@@ -333,18 +340,17 @@ foreach (string file in allBglFiles)
 			ushort bank = br.ReadUInt16();
 			ushort heading = br.ReadUInt16();
 			short imageComplexity = br.ReadInt16();
-			_ = br.BaseStream.Seek(2, SeekOrigin.Current); // There is an unknown 2-byte field here
-			byte[] guidEmptyBytes = br.ReadBytes(16);
-			byte[] guidBytes = br.ReadBytes(16);
-			Guid guid = new(guidBytes);
+			Guid guidEmpty = new(br.ReadBytes(16));
+			Guid guid = new(br.ReadBytes(16));
 			double scale = br.ReadSingle(); // Read as float from file, store as double for precision
+			_ = br.BaseStream.Seek(2, SeekOrigin.Current); // There is an unknown 2-byte field here
 			LibraryObject libObj = new()
 			{
 				id = id,
 				size = size,
 				longitude = (longitude * (360.0 / 805306368.0)) - 180.0,
 				latitude = 90.0 - (latitude * (180.0 / 536870912.0)),
-				altitude = flags.Contains(Flags.IsAboveAGL) ? altitude : altitude + FgElev.GetElevation(90.0 - (latitude * (180.0 / 536870912.0)), (longitude * (360.0 / 805306368.0)) - 180.0),
+				altitude = flags.Contains(Flags.IsAboveAGL) ? altitude + Terrain.GetElevation(90.0 - (latitude * (180.0 / 536870912.0)), (longitude * (360.0 / 805306368.0)) - 180.0) : altitude,
 				flags = flags,
 				pitch = Math.Round(pitch * (360.0 / 65536.0), 3),
 				bank = Math.Round(bank * (360.0 / 65536.0), 3),
@@ -359,57 +365,54 @@ foreach (string file in allBglFiles)
 			}
 			sceneryGuids.Add(guid);
 			libraryObjects[guid].Add(libObj);
-			Console.WriteLine($"{libObj.guid}\t{libObj.size}\t{libObj.longitude:F6}\t{libObj.latitude:F6}\t{libObj.altitude}\t[{string.Join(",", libObj.flags)}]\t{libObj.pitch:F2}\t{libObj.bank:F2}\t{libObj.heading:F2}\t{libObj.imageComplexity}\t{libObj.scale}");
+			Console.WriteLine($"{guid}\t{guidEmpty}\t{libObj.size}\t{libObj.longitude:F6}\t{libObj.latitude:F6}\t{libObj.altitude}\t[{string.Join(",", libObj.flags)}]\t{libObj.pitch:F2}\t{libObj.bank:F2}\t{libObj.heading:F2}\t{libObj.imageComplexity}\t{libObj.scale}");
 			bytesRead += size;
 		}
 	}
 }
 Console.WriteLine($"Total LibraryObjects parsed: {libraryObjects.Count}. Total ModelDatas parsed: {modelDatas.Count}.");
-File.WriteAllText(Path.Combine(args[0], "scenery_guids.txt"), string.Join(Environment.NewLine, sceneryGuids.OrderBy(g => g)));
-File.WriteAllText(Path.Combine(args[0], "model_guids.txt"), string.Join(Environment.NewLine, modelGuids.OrderBy(g => g)));
 
 // We are more likely to have LibraryObjects that don't have corresponding ModelData than vice versa, so iterate over ModelDatas
-// Group this by the index of the tile to remove duplicates and simpler writing later
-Dictionary<int, string> modelDatasByTile = [];
+Dictionary<int, List<string>> finalPlacementsByTile = [];
 foreach (ModelData modelData in modelDatas)
 {
 	if (libraryObjects.TryGetValue(modelData.guid, out List<LibraryObject>? value))
 	{
+		foreach (ModelObject modelObj in modelData.modelObjects)
+		{
+			string outGlbPath = Path.Combine(args[1], $"{modelObj.name}.glb");
+			modelObj.model.ToGltf2().SaveGLB(outGlbPath, new WriteSettings { ImageWriting = ResourceWriteMode.SatelliteFile });
+		}
+		int[] scales = [.. libraryObjects[modelData.guid].Select(lo => (int)lo.scale).Distinct()];
+		string activeName = "";
+		if (modelData.modelObjects.Count == 1 && scales.Length == 0 && modelData.lightObjects.Count == 0)
+		{
+			activeName = $"{modelData.modelObjects[0].name}.glb";
+		}
+		else
+		{
+			XmlDocument doc = new();
+			XmlElement root = doc.CreateElement("PropertyList");
+			root.AppendChild(doc.CreateComment("Generated by Scone"));
+			foreach (ModelObject modelObj in modelData.modelObjects)
+			{
+				XmlElement objElem = doc.CreateElement("model");
+				objElem.AppendChild(doc.CreateElement("name"))!.InnerText = modelObj.name;
+				objElem.AppendChild(doc.CreateElement("path"))!.InnerText = $"{modelObj.name}.glb";
+				root.AppendChild(objElem);
+			}
+			Console.WriteLine(root.OuterXml);
+			// activeName = $"{modelData.modelObjects[0].name}-{}"
+		}
+		if (!finalPlacementsByTile.ContainsKey(Terrain.GetTileIndex(value[0].latitude, value[0].longitude)))
+		{
+			finalPlacementsByTile[Terrain.GetTileIndex(value[0].latitude, value[0].longitude)] = [];
+		}
 		foreach (LibraryObject libObj in value)
 		{
-			int tileIndex = GetTileIndex(libObj.latitude, libObj.longitude);
-			if (!modelDatasByTile.ContainsKey(tileIndex))
-			{
-				modelDatasByTile[tileIndex] = modelData.name;
-			}
+			string placementStr = $"OBJECT_STATIC {activeName} {libObj.longitude:F6} {libObj.latitude:F6} {libObj.altitude} {libObj.heading:F2} {libObj.pitch:F2} {libObj.bank:F2}";
+			finalPlacementsByTile[Terrain.GetTileIndex(libObj.latitude, libObj.longitude)].Add(placementStr);
 		}
-	}
-}
-
-int GetTileIndex(double lat, double lon)
-{
-	if (Math.Abs(lat) > 90 || Math.Abs(lon) > 180)
-	{
-		Console.WriteLine("Latitude or longitude out of range");
-		return 0;
-	}
-	else
-	{
-		double lookup = Math.Abs(lat);
-		double tileWidth = 0;
-		for (int i = 0; i < LatitudeIndex.Length; i++)
-		{
-			if (lookup >= LatitudeIndex[i, 0])
-			{
-				tileWidth = LatitudeIndex[i, 1];
-				break;
-			}
-		}
-		int baseX = (int)Math.Floor(Math.Floor(lon / tileWidth) * tileWidth);
-		int x = (int)Math.Floor((lon - baseX) / tileWidth);
-		int baseY = (int)Math.Floor(lat);
-		int y = (int)Math.Truncate((lat - baseY) * 8);
-		return ((baseX + 180) << 14) + ((baseY + 90) << 6) + (y << 3) + x;
 	}
 }
 
@@ -453,10 +456,15 @@ struct ModelObject
 	public SceneBuilder model;
 }
 
+struct LightObject
+{
+
+}
+
 struct ModelData
 {
 	public Guid guid;
 	public string name;
 	public List<ModelObject> modelObjects;
-	public Dictionary<int, int> scales;
+	public List<LightObject> lightObjects;
 }
