@@ -94,6 +94,81 @@ foreach (string file in allBglFiles)
 		}
 	}
 
+	// Parse SceneryObject subrecords
+	List<(int offset, int size)> sceneryObjectSubrecords = [];
+	foreach (int sceneryOffset in sceneryObjectOffsets)
+	{
+		_ = br.BaseStream.Seek(sceneryOffset + 4, SeekOrigin.Begin);
+		int subrecCount = br.ReadInt32();
+		int subrecOffset = (int)br.ReadUInt32();
+		int size = (int)br.ReadUInt32();
+		Console.WriteLine($"SceneryObject Subrecord Count: {subrecCount}, Offset: 0x{subrecOffset:X}, Size: {size}");
+		sceneryObjectSubrecords.Add((subrecOffset, size));
+	}
+
+	int bytesRead = 0;
+	foreach ((int subOffset, int subSize) in sceneryObjectSubrecords)
+	{
+		bytesRead = 0;
+		while (bytesRead < subSize)
+		{
+			_ = br.BaseStream.Seek(subOffset + bytesRead, SeekOrigin.Begin);
+			ushort id = br.ReadUInt16();
+			if (id != 0x0B) // LibraryObject
+			{
+				uint skip = br.ReadUInt16();
+				Console.WriteLine($"Unexpected subrecord type at offset 0x{subOffset + bytesRead:X}: 0x{id:X4}, skipping {skip} bytes");
+				_ = br.BaseStream.Seek(subOffset + skip, SeekOrigin.Begin);
+				bytesRead += (int)skip;
+				continue;
+			}
+			ushort size = br.ReadUInt16();
+			uint longitude = br.ReadUInt32(), latitude = br.ReadUInt32();
+			short altitude = br.ReadInt16();
+			byte[] flagsBytes = br.ReadBytes(6);
+			List<Flags> flagsList = [];
+			for (int j = 0; j < flagsBytes.Length; j++)
+			{
+				if (flagsBytes[j] != 0)
+				{
+					flagsList.Add((Flags)j);
+				}
+			}
+			Flags[] flags = [.. flagsList];
+			ushort pitch = br.ReadUInt16();
+			ushort bank = br.ReadUInt16();
+			ushort heading = br.ReadUInt16();
+			short imageComplexity = br.ReadInt16();
+			Guid guidEmpty = new(br.ReadBytes(16));
+			Guid guid = new(br.ReadBytes(16));
+			double scale = br.ReadSingle(); // Read as float from file, store as double for precision
+			_ = br.BaseStream.Seek(2, SeekOrigin.Current); // There is an unknown 2-byte field here
+			LibraryObject libObj = new()
+			{
+				id = id,
+				size = size,
+				longitude = (longitude * (360.0 / 805306368.0)) - 180.0,
+				latitude = 90.0 - (latitude * (180.0 / 536870912.0)),
+				altitude = flags.Contains(Flags.IsAboveAGL) ? altitude + Terrain.GetElevation(90.0 - (latitude * (180.0 / 536870912.0)), (longitude * (360.0 / 805306368.0)) - 180.0) : altitude,
+				flags = flags,
+				pitch = Math.Round(pitch * (360.0 / 65536.0), 3),
+				bank = Math.Round(bank * (360.0 / 65536.0), 3),
+				heading = Math.Round(heading * (360.0 / 65536.0), 3),
+				imageComplexity = imageComplexity,
+				guid = guid,
+				scale = Math.Round(scale + 1, 3)
+			};
+			if (!libraryObjects.TryGetValue(guid, out List<LibraryObject>? _))
+			{
+				libraryObjects[guid] = [];
+			}
+			sceneryGuids.Add(guid);
+			libraryObjects[guid].Add(libObj);
+			Console.WriteLine($"{guid}\t{guidEmpty}\t{libObj.size}\t{libObj.longitude:F6}\t{libObj.latitude:F6}\t{libObj.altitude}\t[{string.Join(",", libObj.flags)}]\t{libObj.pitch:F2}\t{libObj.bank:F2}\t{libObj.heading:F2}\t{libObj.imageComplexity}\t{libObj.scale}");
+			bytesRead += size;
+		}
+	}
+
 	// Parse ModelData subrecords
 	List<(int offset, int size)> modelDataSubrecords = [];
 	foreach (int modelDataOffset in mdlDataOffsets)
@@ -105,7 +180,6 @@ foreach (string file in allBglFiles)
 		modelDataSubrecords.Add((subrecOffset, size));
 	}
 
-	int bytesRead = 0;
 	int objectsRead = 0;
 	foreach ((int subOffset, int subSize) in modelDataSubrecords)
 	{
@@ -293,80 +367,6 @@ foreach (string file in allBglFiles)
 			modelGuids.Add(guid);
 			bytesRead += (int)modelDataSize + 24;
 			objectsRead++;
-		}
-	}
-
-	// Parse SceneryObject subrecords
-	List<(int offset, int size)> sceneryObjectSubrecords = [];
-	foreach (int sceneryOffset in sceneryObjectOffsets)
-	{
-		_ = br.BaseStream.Seek(sceneryOffset + 4, SeekOrigin.Begin);
-		int subrecCount = br.ReadInt32();
-		int subrecOffset = (int)br.ReadUInt32();
-		int size = (int)br.ReadUInt32();
-		Console.WriteLine($"SceneryObject Subrecord Count: {subrecCount}, Offset: 0x{subrecOffset:X}, Size: {size}");
-		sceneryObjectSubrecords.Add((subrecOffset, size));
-	}
-
-	foreach ((int subOffset, int subSize) in sceneryObjectSubrecords)
-	{
-		bytesRead = 0;
-		while (bytesRead < subSize)
-		{
-			_ = br.BaseStream.Seek(subOffset + bytesRead, SeekOrigin.Begin);
-			ushort id = br.ReadUInt16();
-			if (id != 0x0B) // LibraryObject
-			{
-				uint skip = br.ReadUInt16();
-				Console.WriteLine($"Unexpected subrecord type at offset 0x{subOffset + bytesRead:X}: 0x{id:X4}, skipping {skip} bytes");
-				_ = br.BaseStream.Seek(subOffset + skip, SeekOrigin.Begin);
-				bytesRead += (int)skip;
-				continue;
-			}
-			ushort size = br.ReadUInt16();
-			uint longitude = br.ReadUInt32(), latitude = br.ReadUInt32();
-			short altitude = br.ReadInt16();
-			byte[] flagsBytes = br.ReadBytes(6);
-			List<Flags> flagsList = [];
-			for (int j = 0; j < flagsBytes.Length; j++)
-			{
-				if (flagsBytes[j] != 0)
-				{
-					flagsList.Add((Flags)j);
-				}
-			}
-			Flags[] flags = [.. flagsList];
-			ushort pitch = br.ReadUInt16();
-			ushort bank = br.ReadUInt16();
-			ushort heading = br.ReadUInt16();
-			short imageComplexity = br.ReadInt16();
-			Guid guidEmpty = new(br.ReadBytes(16));
-			Guid guid = new(br.ReadBytes(16));
-			double scale = br.ReadSingle(); // Read as float from file, store as double for precision
-			_ = br.BaseStream.Seek(2, SeekOrigin.Current); // There is an unknown 2-byte field here
-			LibraryObject libObj = new()
-			{
-				id = id,
-				size = size,
-				longitude = (longitude * (360.0 / 805306368.0)) - 180.0,
-				latitude = 90.0 - (latitude * (180.0 / 536870912.0)),
-				altitude = flags.Contains(Flags.IsAboveAGL) ? altitude + Terrain.GetElevation(90.0 - (latitude * (180.0 / 536870912.0)), (longitude * (360.0 / 805306368.0)) - 180.0) : altitude,
-				flags = flags,
-				pitch = Math.Round(pitch * (360.0 / 65536.0), 3),
-				bank = Math.Round(bank * (360.0 / 65536.0), 3),
-				heading = Math.Round(heading * (360.0 / 65536.0), 3),
-				imageComplexity = imageComplexity,
-				guid = guid,
-				scale = Math.Round(scale + 1, 3)
-			};
-			if (!libraryObjects.TryGetValue(guid, out List<LibraryObject>? _))
-			{
-				libraryObjects[guid] = [];
-			}
-			sceneryGuids.Add(guid);
-			libraryObjects[guid].Add(libObj);
-			Console.WriteLine($"{guid}\t{guidEmpty}\t{libObj.size}\t{libObj.longitude:F6}\t{libObj.latitude:F6}\t{libObj.altitude}\t[{string.Join(",", libObj.flags)}]\t{libObj.pitch:F2}\t{libObj.bank:F2}\t{libObj.heading:F2}\t{libObj.imageComplexity}\t{libObj.scale}");
-			bytesRead += size;
 		}
 	}
 }
