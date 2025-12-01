@@ -1,4 +1,7 @@
+using System;
 using System.IO.Compression;
+using System.Numerics;
+using System.Reflection.Metadata.Ecma335;
 
 public class Terrain
 {
@@ -21,12 +24,66 @@ public class Terrain
 
 	public static void GetBtgAsMesh(double lat, double lon, int version)
 	{
+		List<Vector3> vertices = [];
+		List<Index> triangles = [];
+		Vector3 center = new (0, 0, 0);
+
 		string lonHemi = lon >= 0 ? "e" : "w";
 		string latHemi = lat >= 0 ? "n" : "s";
 		string url = $"terramaster.flightgear.org/terrasync/ws{version}/Terrain/{lonHemi}{Math.Floor(lon / 10) * 10:000}/{latHemi}{Math.Floor(lat / 10) * 10:00}/{lonHemi}{Math.Floor(Math.Abs(lon)):000}{latHemi}{Math.Floor(Math.Abs(lat)):00}/{GetTileIndex(lat, lon)}.btg.gz";
 		byte[] data = client.GetByteArrayAsync(url).Result;
 		GZipStream gzip = new(new MemoryStream(data), CompressionMode.Decompress);
 		BinaryReader reader = new(gzip);
+		ushort tileVersion = reader.ReadUInt16(); // version
+		if (reader.ReadChars(2).ToString() != "SG") // magic
+		{
+			Console.WriteLine("Not a valid BTG file");
+			return;
+		}
+		reader.ReadUInt32(); // creation date
+		ushort objectCount = reader.ReadUInt16(); // number of objects
+		for (int i = 0; i < objectCount; i++)
+		{
+			char type = reader.ReadChar();
+			ushort objPropsCount = reader.ReadUInt16();
+			ushort objElementsCount = reader.ReadUInt16();
+			BtgObjProp[] objProps = new BtgObjProp[objPropsCount];
+			for (int j = 0; j < objPropsCount; j++)
+			{
+				objProps[j].type = reader.ReadChar();
+				objProps[j].byteCount = reader.ReadUInt32();
+				objProps[j].data = reader.ReadBytes((int)objProps[j].byteCount);
+			}
+			if (type == 0)
+			{
+
+			}
+			else if (type == 1)
+			{
+
+			}
+			else if (type == 2)
+			{
+
+			}
+			else if (type == 10)
+			{
+
+			}
+			else if (type == 11)
+			{
+
+			}
+			else if (type == 12)
+			{
+
+			}
+			else
+			{
+				// We don't care about any other object types
+				continue;
+			}
+		}
 	}
 
 	public static int GetTileIndex(double lat, double lon)
@@ -55,6 +112,7 @@ public class Terrain
 			return ((baseX + 180) << 14) + ((baseY + 90) << 6) + (y << 3) + x;
 		}
 	}
+
 	public static (double lat, double lon) GetLatLon(int tileIndex)
 	{
 		// Extract x, y, baseY, baseX from the tile index (reverse of GetTileIndex bit packing)
@@ -81,5 +139,12 @@ public class Terrain
 		double lon = baseX + x * tileWidth;
 
 		return (lat, lon);
+	}
+
+	struct BtgObjProp
+	{
+		public char type;
+		public uint byteCount;
+		public byte[] data;
 	}
 }

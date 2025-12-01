@@ -36,7 +36,6 @@ if (!Directory.Exists(args[1]))
 }
 string[] allBglFiles = Directory.GetFiles(args[0], "*.bgl", SearchOption.AllDirectories);
 Dictionary<Guid, List<LibraryObject>> libraryObjects = [];
-List<ModelData> modelDatas = [];
 foreach (string file in allBglFiles)
 {
 	using FileStream fs = new(file, FileMode.Open, FileAccess.Read);
@@ -68,11 +67,7 @@ foreach (string file in allBglFiles)
 		uint startSubsection = br.ReadUInt32();
 		_ = br.BaseStream.Seek(recordStartPos + 0x10, SeekOrigin.Begin);
 		uint recSize = br.ReadUInt32();
-		if (recType == 0x002B) // ModelData
-		{
-			mdlDataOffsets.Add((int)startSubsection);
-		}
-		else if (recType == 0x0025) // SceneryObject
+		if (recType == 0x0025) // SceneryObject
 		{
 			sceneryObjectOffsets.Add((int)startSubsection);
 		}
@@ -149,6 +144,47 @@ foreach (string file in allBglFiles)
 			bytesRead += size;
 		}
 	}
+}
+
+// Look for models after placements have been gathered
+foreach (string file in allBglFiles)
+{
+	using FileStream fs = new(file, FileMode.Open, FileAccess.Read);
+	using BinaryReader br = new(fs);
+
+	// Read and validate BGL header
+	byte[] magicNumber1 = br.ReadBytes(4);
+	_ = br.BaseStream.Seek(0x10, SeekOrigin.Begin);
+	byte[] magicNumber2 = br.ReadBytes(4);
+	if (!magicNumber1.SequenceEqual(new byte[] { 0x01, 0x02, 0x92, 0x19 }) ||
+		!magicNumber2.SequenceEqual(new byte[] { 0x03, 0x18, 0x05, 0x08 }))
+	{
+		Console.WriteLine("Invalid BGL header");
+		return;
+	}
+	_ = br.BaseStream.Seek(0x14, SeekOrigin.Begin);
+	uint recordCt = br.ReadUInt32();
+
+	// Skip 0x38-byte header
+	_ = br.BaseStream.Seek(0x38, SeekOrigin.Begin);
+
+	List<int> mdlDataOffsets = [];
+	List<int> sceneryObjectOffsets = [];
+	for (int i = 0; i < recordCt; i++)
+	{
+		long recordStartPos = br.BaseStream.Position;
+		uint recType = br.ReadUInt32();
+		_ = br.BaseStream.Seek(recordStartPos + 0x0C, SeekOrigin.Begin);
+		uint startSubsection = br.ReadUInt32();
+		_ = br.BaseStream.Seek(recordStartPos + 0x10, SeekOrigin.Begin);
+		uint recSize = br.ReadUInt32();
+		if (recType == 0x002B) // ModelData
+		{
+			mdlDataOffsets.Add((int)startSubsection);
+		}
+	}
+
+	int bytesRead = 0;
 
 	Dictionary<int, List<string>> finalPlacementsByTile = [];
 	// Parse ModelData subrecords
@@ -359,15 +395,32 @@ foreach (string file in allBglFiles)
 					}
 					foreach (ModelObject modelObj in current.modelObjects)
 					{
-						string outGlbPath = Path.Combine(path, $"{modelObj.name}.glb");
-						modelObj.model.ToGltf2().SaveGLB(outGlbPath, new WriteSettings { ImageWriting = ResourceWriteMode.SatelliteFile });
+						string outGlbPath = Path.Combine(path, $"{modelObj.name}.gltf");
+						modelObj.model.ToGltf2().SaveGLTF(outGlbPath, new WriteSettings
+						{
+							ImageWriting = ResourceWriteMode.SatelliteFile,
+							ImageWriteCallback = (context, assetName, image) =>
+							{
+								string fileName = string.IsNullOrEmpty(image.SourcePath) ? assetName : image.SourcePath.Split(Path.DirectorySeparatorChar).Last();
+								string finalPath = Path.Combine(path, fileName);
+
+								// Only write the image once
+								if (!File.Exists(finalPath))
+								{
+									File.WriteAllBytes(finalPath, image.Content.ToArray());
+								}
+
+								// Return the URI that should appear in the glTF
+								return fileName;
+							}
+						});
 					}
 				}
 				int[] scales = [.. libraryObjects[current.guid].Select(lo => (int)lo.scale).Distinct()];
 				string activeName = "";
 				if (current.modelObjects.Count == 1 && scales.Length == 0 && current.lightObjects.Count == 0)
 				{
-					activeName = $"{current.modelObjects[0].name}.glb";
+					activeName = $"{current.modelObjects[0].name}.gltf";
 				}
 				else
 				{
@@ -399,7 +452,6 @@ foreach (string file in allBglFiles)
 		}
 	}
 }
-Console.WriteLine($"Total LibraryObjects parsed: {libraryObjects.Count}. Total ModelDatas parsed: {modelDatas.Count}.");
 
 enum Flags
 {
