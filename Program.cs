@@ -414,6 +414,17 @@ foreach (string file in allBglFiles)
 								return fileName;
 							}
 						});
+						// Reopen the gltf file to fix the texture problem.
+						// This way isn't clean, but it's not messy and it works reliably.
+						JObject gltfText = JObject.Parse(File.ReadAllText(outGlbPath));
+						if (gltfText["textures"] != null)
+						{
+							foreach (JObject tex in gltfText["textures"].Cast<JObject>())
+							{
+								tex["source"] = tex["extensions"]?["MSFT_texture_dds"]?["source"];
+							}
+						}
+						File.WriteAllText(outGlbPath, gltfText.ToString());
 					}
 				}
 				int[] scales = [.. libraryObjects[current.guid].Select(lo => (int)lo.scale).Distinct()];

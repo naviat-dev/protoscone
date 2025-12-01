@@ -1,4 +1,5 @@
 using System.Numerics;
+using System.Text.RegularExpressions;
 using Newtonsoft.Json.Linq;
 using SharpGLTF.Geometry;
 using SharpGLTF.Geometry.VertexTypes;
@@ -193,7 +194,7 @@ public class GlbBuilder
 				{
 					if (imagesJson[texIndex]["uri"] != null)
 					{
-						string[] imageMatches = Directory.GetFiles(sourcePath, $"*{imagesJson[texIndex]["uri"]!.Value<string>()!}", SearchOption.AllDirectories);
+						string[] imageMatches = [.. Directory.GetFiles(sourcePath, "*", SearchOption.AllDirectories).Where(f => string.Equals(Path.GetFileName(f), imagesJson[texIndex]["uri"]!.Value<string>(), StringComparison.OrdinalIgnoreCase))];
 						int mostLikelyMatchScore = -1;
 						foreach (string match in imageMatches)
 						{
@@ -209,10 +210,6 @@ public class GlbBuilder
 							}
 						}
 					}
-					string imageName = imagesJson[texIndex]["name"]?.Value<string>() ?? "UnnamedImage";
-
-					Console.WriteLine($"Loading base color texture from: {mostLikelyMatch} (UV set {texCoordSet})");
-					// Use URI reference instead of embedding
 
 					material.UseChannel(KnownChannel.BaseColor)
 							.UseTexture()
@@ -234,7 +231,7 @@ public class GlbBuilder
 				{
 					if (imagesJson[texIndex]["uri"] != null)
 					{
-						string[] imageMatches = Directory.GetFiles(sourcePath, $"*{imagesJson[texIndex]["uri"]!.Value<string>()!}", SearchOption.AllDirectories);
+						string[] imageMatches = [.. Directory.GetFiles(sourcePath, "*", SearchOption.AllDirectories).Where(f => string.Equals(Path.GetFileName(f), imagesJson[texIndex]["uri"]!.Value<string>(), StringComparison.OrdinalIgnoreCase))];
 						int mostLikelyMatchScore = -1;
 						foreach (string match in imageMatches)
 						{
@@ -250,7 +247,7 @@ public class GlbBuilder
 							}
 						}
 					}
-					string imageName = imagesJson[texIndex]["name"]?.Value<string>() ?? "UnnamedImage";
+
 
 					material.UseChannel(KnownChannel.MetallicRoughness)
 						.UseTexture()
@@ -268,7 +265,9 @@ public class GlbBuilder
 			{
 				if (imagesJson[texIndex]["uri"] != null)
 				{
-					string[] imageMatches = Directory.GetFiles(sourcePath, $"*{imagesJson[texIndex]["uri"]!.Value<string>()!}", SearchOption.AllDirectories);
+					// TODO: This method doesn't work properly in all conditions. For example, if the names of one file is a superstring of the other, it may pick the wrong one.
+					// This may be a job for a regex to handle.
+					string[] imageMatches = [.. Directory.GetFiles(sourcePath, "*", SearchOption.AllDirectories).Where(f => string.Equals(Path.GetFileName(f), imagesJson[texIndex]["uri"]!.Value<string>(), StringComparison.OrdinalIgnoreCase))];
 					int mostLikelyMatchScore = -1;
 					foreach (string match in imageMatches)
 					{
@@ -284,7 +283,7 @@ public class GlbBuilder
 						}
 					}
 				}
-				string imageName = imagesJson[texIndex]["name"]?.Value<string>() ?? "UnnamedImage";
+
 
 				material.UseChannel(KnownChannel.Normal)
 					.UseTexture()
@@ -301,7 +300,8 @@ public class GlbBuilder
 			{
 				if (imagesJson[texIndex]["uri"] != null)
 				{
-					string[] imageMatches = Directory.GetFiles(sourcePath, $"*{imagesJson[texIndex]["uri"]!.Value<string>()!}", SearchOption.AllDirectories);
+					Console.WriteLine($"Occlusion texture found: {imagesJson[texIndex]["uri"]!.Value<string>()!}");
+					string[] imageMatches = [.. Directory.GetFiles(sourcePath, "*", SearchOption.AllDirectories).Where(f => string.Equals(Path.GetFileName(f), imagesJson[texIndex]["uri"]!.Value<string>(), StringComparison.OrdinalIgnoreCase))];
 					int mostLikelyMatchScore = -1;
 					foreach (string match in imageMatches)
 					{
@@ -317,7 +317,6 @@ public class GlbBuilder
 						}
 					}
 				}
-				string imageName = imagesJson[texIndex]["name"]?.Value<string>() ?? "UnnamedImage";
 
 				material.UseChannel(KnownChannel.Occlusion)
 					.UseTexture()
@@ -334,7 +333,7 @@ public class GlbBuilder
 			{
 				if (imagesJson[texIndex]["uri"] != null)
 				{
-					string[] imageMatches = Directory.GetFiles(sourcePath, $"*{imagesJson[texIndex]["uri"]!.Value<string>()!}", SearchOption.AllDirectories);
+					string[] imageMatches = [.. Directory.GetFiles(sourcePath, "*", SearchOption.AllDirectories).Where(f => string.Equals(Path.GetFileName(f), imagesJson[texIndex]["uri"]!.Value<string>(), StringComparison.OrdinalIgnoreCase))];
 					int mostLikelyMatchScore = -1;
 					foreach (string match in imageMatches)
 					{
@@ -350,7 +349,7 @@ public class GlbBuilder
 						}
 					}
 				}
-				string imageName = imagesJson[texIndex]["name"]?.Value<string>() ?? "UnnamedImage";
+
 
 				material.UseChannel(KnownChannel.Emissive)
 					.UseTexture()
