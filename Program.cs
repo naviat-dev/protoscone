@@ -1,6 +1,5 @@
 ﻿using System.Numerics;
 using System.Text;
-using System.Text.RegularExpressions;
 using System.Xml;
 using Newtonsoft.Json.Linq;
 using SharpGLTF.Geometry;
@@ -13,13 +12,6 @@ if (args.Length != 2)
 {
 	Console.WriteLine("Invalid number of arguments. Usage: protoscone.exe [path/to/input] [path/to/output]");
 	return;
-}
-
-// Display the provided arguments
-Console.WriteLine("Arguments provided:");
-for (int i = 0; i < args.Length; i++)
-{
-	Console.WriteLine($"Argument {i + 1}: {args[i]}");
 }
 
 if (Directory.Exists(args[0]) == false)
@@ -101,12 +93,12 @@ foreach (string file in allBglFiles)
 			}
 			ushort size = br.ReadUInt16();
 			uint longitude = br.ReadUInt32(), latitude = br.ReadUInt32();
-			short altitude = br.ReadInt16();
-			byte[] flagsBytes = br.ReadBytes(6);
+			uint altitude = br.ReadUInt32();
+			ushort flagsValue = br.ReadUInt16();
 			List<Flags> flagsList = [];
-			for (int j = 0; j < flagsBytes.Length; j++)
+			for (int j = 0; j < 7; j++)
 			{
-				if (flagsBytes[j] != 0)
+				if ((byte)((flagsValue >> j) & 1) != 0)
 				{
 					flagsList.Add((Flags)j);
 				}
@@ -116,24 +108,24 @@ foreach (string file in allBglFiles)
 			ushort bank = br.ReadUInt16();
 			ushort heading = br.ReadUInt16();
 			short imageComplexity = br.ReadInt16();
+			_ = br.BaseStream.Seek(2, SeekOrigin.Current); // There is an unknown 2-byte field here
 			_ = br.BaseStream.Seek(16, SeekOrigin.Current); // Skip GUID empty field
 			Guid guid = new(br.ReadBytes(16));
 			double scale = br.ReadSingle(); // Read as float from file, store as double for precision
-			_ = br.BaseStream.Seek(2, SeekOrigin.Current); // There is an unknown 2-byte field here
 			LibraryObject libObj = new()
 			{
 				id = id,
 				size = size,
 				longitude = (longitude * (360.0 / 805306368.0)) - 180.0,
 				latitude = 90.0 - (latitude * (180.0 / 536870912.0)),
-				altitude = flags.Contains(Flags.IsAboveAGL) ? altitude + Terrain.GetElevation(90.0 - (latitude * (180.0 / 536870912.0)), (longitude * (360.0 / 805306368.0)) - 180.0) : altitude,
+				altitude = flags.Contains(Flags.IsAboveAGL) ? altitude + Terrain.GetElevation((float)(90.0 - (latitude * (180.0 / 536870912.0))), (float)((longitude * (360.0 / 805306368.0)) - 180.0)) : altitude,
 				flags = flags,
 				pitch = Math.Round(pitch * (360.0 / 65536.0), 3),
 				bank = Math.Round(bank * (360.0 / 65536.0), 3),
 				heading = Math.Round(heading * (360.0 / 65536.0), 3),
 				imageComplexity = imageComplexity,
 				guid = guid,
-				scale = Math.Round(scale + 1, 3)
+				scale = Math.Round(scale, 3)
 			};
 			if (!libraryObjects.TryGetValue(guid, out List<LibraryObject>? _))
 			{
@@ -214,6 +206,7 @@ foreach (string file in allBglFiles)
 			byte[] mdlBytes = br.ReadBytes((int)modelDataSize);
 			string name = "";
 			List<LodData> lods = [];
+			List<LightObject> lightObjects = [];
 			string chunkID = Encoding.ASCII.GetString(mdlBytes, 0, Math.Min(4, mdlBytes.Length));
 			if (chunkID != "RIFF")
 			{
@@ -264,6 +257,7 @@ foreach (string file in allBglFiles)
 				}
 				else if (chunk == "GLBD")
 				{
+					Console.WriteLine($"Processing GLBD chunk for model {name} ({guid})");
 					int size = BitConverter.ToInt32(mdlBytes, i + 4);
 					int glbIndex = 0; // for unique filenames per GLB in this chunk
 
@@ -300,6 +294,7 @@ foreach (string file in allBglFiles)
 							JArray bufferViews = (JArray)json["bufferViews"]!;
 							JArray images = (JArray)json["images"]!;
 							JArray materials = (JArray)json["materials"]!;
+							JArray textures = (JArray)json["textures"]!;
 
 							SceneBuilder scene = new();
 							Dictionary<int, List<int>> meshIndexToSceneNodeIndex = [];
@@ -316,16 +311,66 @@ foreach (string file in allBglFiles)
 									}
 									meshIndexToSceneNodeIndex[meshIndex].Add(k);
 								}
+								else if (node["extensions"]?["ASOBO_macro_light"] != null)
+								{
+									LightObject light = new()
+									{
+										name = node["name"]?.Value<string>() ?? "Unnamed_Light",
+										position = new Vector3(
+											node["translation"] != null ? node["translation"]![0]!.Value<float>() : 0,
+											node["translation"] != null ? node["translation"]![1]!.Value<float>() : 0,
+											node["translation"] != null ? node["translation"]![2]!.Value<float>() : 0),
+
+										pitchDeg = node["rotation"] != null ? MathF.Asin(Math.Clamp(2 * (node["rotation"]![1]!.Value<float>() * node["rotation"]![3]!.Value<float>() - node["rotation"]![0]!.Value<float>() * node["rotation"]![2]!.Value<float>()), -1f, 1f)) * (180.0f / MathF.PI) : 0,
+										rollDeg = node["rotation"] != null ? MathF.Atan2(2 * (node["rotation"]![0]!.Value<float>() * node["rotation"]![3]!.Value<float>() + node["rotation"]![1]!.Value<float>() * node["rotation"]![2]!.Value<float>()), 1 - 2 * (node["rotation"]![0]!.Value<float>() * node["rotation"]![0]!.Value<float>() + node["rotation"]![1]!.Value<float>() * node["rotation"]![1]!.Value<float>())) * (180.0f / MathF.PI) : 0,
+										headingDeg = node["rotation"] != null ? MathF.Atan2(2 * (node["rotation"]![2]!.Value<float>() * node["rotation"]![3]!.Value<float>() + node["rotation"]![0]!.Value<float>() * node["rotation"]![1]!.Value<float>()), 1 - 2 * (node["rotation"]![1]!.Value<float>() * node["rotation"]![1]!.Value<float>() + node["rotation"]![2]!.Value<float>() * node["rotation"]![2]!.Value<float>())) * (180.0f / MathF.PI) : 0,
+										color = new Vector4(
+											node["extensions"]!["ASOBO_macro_light"]!["color"] != null ? node["extensions"]!["ASOBO_macro_light"]!["color"]![0]!.Value<float>() : 1,
+											node["extensions"]!["ASOBO_macro_light"]!["color"] != null ? node["extensions"]!["ASOBO_macro_light"]!["color"]![1]!.Value<float>() : 1,
+											node["extensions"]!["ASOBO_macro_light"]!["color"] != null ? node["extensions"]!["ASOBO_macro_light"]!["color"]![2]!.Value<float>() : 1,
+											1),
+										intensity = node["extensions"]!["ASOBO_macro_light"]!["intensity"] != null ? node["extensions"]!["ASOBO_macro_light"]!["intensity"]!.Value<float>() : 1,
+										cutoffAngle = node["extensions"]!["ASOBO_macro_light"]!["cone_angle"] != null ? node["extensions"]!["ASOBO_macro_light"]!["cone_angle"]!.Value<float>() : 45,
+										dayNightCycle = node["extensions"]!["ASOBO_macro_light"]!["day_night_cycle"] != null ? node["extensions"]!["ASOBO_macro_light"]!["day_night_cycle"]!.Value<bool>() : false,
+										flashDuration = node["extensions"]!["ASOBO_macro_light"]!["flash_duration"] != null ? node["extensions"]!["ASOBO_macro_light"]!["flash_duration"]!.Value<float>() : 0,
+										flashFrequency = node["extensions"]!["ASOBO_macro_light"]!["flash_frequency"] != null ? node["extensions"]!["ASOBO_macro_light"]!["flash_frequency"]!.Value<float>() : 0,
+										flashPhase = node["extensions"]!["ASOBO_macro_light"]!["flash_phase"] != null ? node["extensions"]!["ASOBO_macro_light"]!["flash_phase"]!.Value<float>() : 0,
+										rotationSpeed = node["extensions"]!["ASOBO_macro_light"]!["rotation_speed"] != null ? node["extensions"]!["ASOBO_macro_light"]!["rotation_speed"]!.Value<float>() : 0,
+									};
+
+									if (light.cutoffAngle / 2.0f < 90.0f && light.cutoffAngle / 2.0f > 0.0f)
+									{
+										// Tunable constants:
+										float kBase = 0.1f;    // attenuation base constant
+										float visibleFraction = 0.01f;  // threshold (1%)
+										float eMin = 1.0f;    // minimum exponent
+										float eMax = 128.0f;  // maximum exponent
+										float p = 2.0f;    // exponent shaping power
+
+										//-----------------------------------------
+										// RANGE (meters)
+										//-----------------------------------------
+										float I0 = Math.Max(1e-6f, light.intensity);
+										float kq = kBase / I0;                        // quadratic attenuation coefficient
+
+										float f = Math.Clamp(visibleFraction, 1e-6f, 0.999f);
+
+										light.range_m = (float)Math.Sqrt(((1.0f / f) - 1.0f) / kq);
+
+										// n = normalized tightness factor (0..1)
+										float n = 1.0f - (light.cutoffAngle / 45.0f);
+										n = Math.Clamp(n, 0.0f, 1.0f);
+
+										// Focus exponent mapping
+										light.spot_exponent = eMin + (float)Math.Pow(n, p) * (eMax - eMin);
+										light.spot_exponent = Math.Clamp(light.spot_exponent, eMin, eMax);
+									}
+
+								}
 							}
 							foreach (JObject mesh in meshes.Cast<JObject>())
 							{
-								Console.WriteLine($"Processing mesh: {mesh["name"]?.Value<string>() ?? "UnnamedMesh"}");
-								MeshBuilder<VertexPositionNormalTangent, VertexTexture2, VertexEmpty> meshBuilder = GlbBuilder.BuildMesh(args[0], file, mesh, accessors, bufferViews, materials, images, glbBinBytes);
-								Console.WriteLine($"Built mesh with {meshBuilder.Primitives.Count} primitives.");
-								foreach (var prim in meshBuilder.Primitives)
-								{
-									Console.WriteLine($"Primitive has {prim.Vertices.Count} vertices and {prim.GetIndices().Count} indices.");
-								}
+								MeshBuilder<VertexPositionNormalTangent, VertexTexture2, VertexEmpty> meshBuilder = GlbBuilder.BuildMesh(args[0], file, mesh, accessors, bufferViews, materials, textures, images, glbBinBytes);
 								Vector3 translationFinal = Vector3.Zero;
 								Quaternion rotationFinal = Quaternion.Identity;
 								Vector3 scaleFinal = Vector3.One;
@@ -340,8 +385,6 @@ foreach (string file in allBglFiles)
 								float avgScale = (scaleFinal.X + scaleFinal.Y + scaleFinal.Z) / 3.0f;
 								scaleFinal = new Vector3(avgScale, avgScale, avgScale);
 
-								// Console.WriteLine($"Final Transform - Translation: {translationFinal}, Rotation: {rotationFinal}, Scale: {scaleFinal}");
-								// meshBuilder is your MeshBuilder<VertexPositionNormalTangent> (or whichever type)
 								Matrix4x4 transform = Matrix4x4.CreateScale(scaleFinal) *
 												Matrix4x4.CreateFromQuaternion(rotationFinal) *
 												Matrix4x4.CreateTranslation(translationFinal);
@@ -419,7 +462,7 @@ foreach (string file in allBglFiles)
 						JObject gltfText = JObject.Parse(File.ReadAllText(outGlbPath));
 						if (gltfText["textures"] != null)
 						{
-							foreach (JObject tex in gltfText["textures"].Cast<JObject>())
+							foreach (JObject tex in gltfText["textures"]!.Cast<JObject>())
 							{
 								tex["source"] = tex["extensions"]?["MSFT_texture_dds"]?["source"];
 							}
@@ -427,9 +470,9 @@ foreach (string file in allBglFiles)
 						File.WriteAllText(outGlbPath, gltfText.ToString());
 					}
 				}
-				int[] scales = [.. libraryObjects[current.guid].Select(lo => (int)lo.scale).Distinct()];
+				int[] scales = [.. libraryObjects[current.guid].Where(lo => lo.scale != 1).Select(lo => (int)lo.scale).Distinct()];
 				string activeName = "";
-				if (current.modelObjects.Count == 1 && scales.Length == 0 && current.lightObjects.Count == 0)
+				if (current.modelObjects.Count == 1 && scales.Length == 0 && current.lightObjects?.Count == 0)
 				{
 					activeName = $"{current.modelObjects[0].name}.gltf";
 				}
@@ -442,10 +485,9 @@ foreach (string file in allBglFiles)
 					{
 						XmlElement objElem = doc.CreateElement("model");
 						objElem.AppendChild(doc.CreateElement("name"))!.InnerText = modelObj.name;
-						objElem.AppendChild(doc.CreateElement("path"))!.InnerText = $"{modelObj.name}.glb";
+						objElem.AppendChild(doc.CreateElement("path"))!.InnerText = $"{modelObj.name}.gltf";
 						root.AppendChild(objElem);
 					}
-					Console.WriteLine(root.OuterXml);
 					// activeName = $"{modelData.modelObjects[0].name}-{}"
 				}
 				if (!finalPlacementsByTile.ContainsKey(Terrain.GetTileIndex(value[0].latitude, value[0].longitude)))
@@ -462,6 +504,13 @@ foreach (string file in allBglFiles)
 			objectsRead++;
 		}
 	}
+}
+
+XmlElement CreateLightElement(LightObject light)
+{
+	XmlElement lightElem = new XmlDocument().CreateElement("light");
+	lightElem.AppendChild(new XmlDocument().CreateElement("name"))!.InnerText = light.name ?? "Unnamed_Light";
+	return lightElem;
 }
 
 enum Flags
@@ -506,7 +555,21 @@ struct ModelObject
 
 struct LightObject
 {
-
+	public string? name;
+	public Vector3 position;
+	public float pitchDeg;
+	public float rollDeg;
+	public float headingDeg;
+	public Vector4 color;
+	public float intensity;
+	public float cutoffAngle;
+	public float range_m;
+	public float spot_exponent;
+	public bool dayNightCycle;
+	public float flashDuration;
+	public float flashFrequency;
+	public float flashPhase;
+	public float rotationSpeed;
 }
 
 struct ModelData

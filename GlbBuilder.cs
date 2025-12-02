@@ -1,5 +1,4 @@
 using System.Numerics;
-using System.Text.RegularExpressions;
 using Newtonsoft.Json.Linq;
 using SharpGLTF.Geometry;
 using SharpGLTF.Geometry.VertexTypes;
@@ -67,42 +66,43 @@ public class GlbBuilder
 		return node;
 	}
 
-	public static MeshBuilder<VertexPositionNormalTangent, VertexTexture2, VertexEmpty> BuildMesh(string sourcePath, string sourceBgl, JObject meshJson, JArray accessorsJson, JArray bufferViewsJson, JArray materialsJson, JArray imagesJson, byte[] glbBinBytes)
+	public static MeshBuilder<VertexPositionNormalTangent, VertexTexture2, VertexEmpty> BuildMesh(string srcPath, string srcBgl, JObject meshJson, JArray accJson, JArray bvJson, JArray matsJson, JArray texJson, JArray imgJson, byte[] glbBinBytes)
 	{
 
 		MeshBuilder<VertexPositionNormalTangent, VertexTexture2, VertexEmpty> mesh = new(meshJson["name"]?.Value<string>() ?? "UnnamedMesh");
 		foreach (JObject primJson in ((JArray)meshJson["primitives"]!).Cast<JObject>())
 		{
-			PrimitiveBuilder<MaterialBuilder, VertexPositionNormalTangent, VertexTexture2, VertexEmpty> prim = mesh.UsePrimitive(BuildMaterial((JObject)materialsJson[primJson["material"]!.Value<int>()], imagesJson, sourcePath, sourceBgl));
+			JObject matJson = (JObject)matsJson[primJson["material"]!.Value<int>()];
+			PrimitiveBuilder<MaterialBuilder, VertexPositionNormalTangent, VertexTexture2, VertexEmpty> prim = mesh.UsePrimitive(BuildMaterial(matJson, texJson, imgJson, srcPath, srcBgl));
 			JObject attributes = (JObject)primJson["attributes"]!;
 			PrimData data = new();
 
 			// Load indices
 			int idxAccIndex = primJson["indices"]!.Value<int>();
-			if (accessorsJson.Count > idxAccIndex)
+			if (accJson.Count > idxAccIndex)
 			{
-				data.Indices = LoadIndexData((JObject)accessorsJson[idxAccIndex], bufferViewsJson, glbBinBytes);
+				data.Indices = LoadIndexData((JObject)accJson[idxAccIndex], bvJson, glbBinBytes);
 			}
 
 			// Load positions
 			int posAccIndex = attributes["POSITION"]!.Value<int>();
-			if (accessorsJson.Count > posAccIndex)
+			if (accJson.Count > posAccIndex)
 			{
-				data.Positions = LoadPositionAccessorData((JObject)accessorsJson[posAccIndex], bufferViewsJson, glbBinBytes);
+				data.Positions = LoadPositionAccessorData((JObject)accJson[posAccIndex], bvJson, glbBinBytes);
 			}
 
 			// Load normals
 			int normAccIndex = attributes["NORMAL"]!.Value<int>();
-			if (accessorsJson.Count > normAccIndex)
+			if (accJson.Count > normAccIndex)
 			{
-				data.Normals = LoadNormalAccessorData((JObject)accessorsJson[normAccIndex], bufferViewsJson, glbBinBytes);
+				data.Normals = LoadNormalAccessorData((JObject)accJson[normAccIndex], bvJson, glbBinBytes);
 			}
 
 			// Load tangents
 			int tangAccIndex = attributes["TANGENT"]!.Value<int>();
-			if (accessorsJson.Count > tangAccIndex)
+			if (accJson.Count > tangAccIndex)
 			{
-				data.Tangents = LoadTangentAccessorData((JObject)accessorsJson[tangAccIndex], bufferViewsJson, glbBinBytes);
+				data.Tangents = LoadTangentAccessorData((JObject)accJson[tangAccIndex], bvJson, glbBinBytes);
 			}
 
 			// Load all texture coordinate sets
@@ -112,9 +112,9 @@ public class GlbBuilder
 				if (attributes[texCoordKey] != null)
 				{
 					int uvAccIndex = (int)attributes[texCoordKey]!;
-					if (accessorsJson.Count > uvAccIndex)
+					if (accJson.Count > uvAccIndex)
 					{
-						data.TexCoords.Add(LoadTexCoordAccessorData((JObject)accessorsJson[uvAccIndex], bufferViewsJson, glbBinBytes));
+						data.TexCoords.Add(LoadTexCoordAccessorData((JObject)accJson[uvAccIndex], bvJson, glbBinBytes));
 					}
 				}
 				else
@@ -170,13 +170,12 @@ public class GlbBuilder
 		return mesh;
 	}
 
-	private static MaterialBuilder BuildMaterial(JObject materialJson, JArray imagesJson, string sourcePath, string sourceBgl)
+	private static MaterialBuilder BuildMaterial(JObject matJson, JArray texJson, JArray imgJson, string srcPath, string sourceBgl)
 	{
-		MaterialBuilder material = MaterialBuilder.CreateDefault();
-		material.Name = materialJson["name"]?.Value<string>() ?? "UnnamedMaterial";
-		if (materialJson["pbrMetallicRoughness"] != null)
+		MaterialBuilder material = new(matJson["name"]?.Value<string>() ?? "UnnamedMaterial");
+		if (matJson["pbrMetallicRoughness"] != null)
 		{
-			JObject pbr = (JObject)materialJson["pbrMetallicRoughness"]!;
+			JObject pbr = (JObject)matJson["pbrMetallicRoughness"]!;
 			if (pbr["baseColorFactor"] != null)
 			{
 				JArray colorFactor = (JArray)pbr["baseColorFactor"]!;
@@ -190,11 +189,12 @@ public class GlbBuilder
 				int texIndex = pbr["baseColorTexture"]!["index"]!.Value<int>();
 				int texCoordSet = pbr["baseColorTexture"]!["texCoord"]?.Value<int>() ?? 0;
 				string mostLikelyMatch = "";
-				if (texIndex >= 0 && texIndex < imagesJson.Count)
+				if (texIndex >= 0 && texIndex < texJson.Count)
 				{
-					if (imagesJson[texIndex]["uri"] != null)
+					string imgUri = imgJson[texJson[texIndex]["extensions"]!["MSFT_texture_dds"]!["source"]!.Value<int>()]["uri"]!.Value<string>() ?? "";
+					if (imgUri != null)
 					{
-						string[] imageMatches = [.. Directory.GetFiles(sourcePath, "*", SearchOption.AllDirectories).Where(f => string.Equals(Path.GetFileName(f), imagesJson[texIndex]["uri"]!.Value<string>(), StringComparison.OrdinalIgnoreCase))];
+						string[] imageMatches = [.. Directory.GetFiles(srcPath, "*", SearchOption.AllDirectories).Where(f => string.Equals(Path.GetFileName(f), imgUri, StringComparison.OrdinalIgnoreCase))];
 						int mostLikelyMatchScore = -1;
 						foreach (string match in imageMatches)
 						{
@@ -211,11 +211,13 @@ public class GlbBuilder
 						}
 					}
 
-					material.UseChannel(KnownChannel.BaseColor)
-							.UseTexture()
-							.WithPrimaryImage(mostLikelyMatch)
-							.WithCoordinateSet(texCoordSet);
-
+					if (!string.IsNullOrEmpty(mostLikelyMatch))
+					{
+						material.UseChannel(KnownChannel.BaseColor)
+								.UseTexture()
+								.WithPrimaryImage(mostLikelyMatch)
+								.WithCoordinateSet(texCoordSet);
+					}
 				}
 			}
 			if (pbr["metallicFactor"] != null || pbr["roughnessFactor"] != null)
@@ -227,11 +229,12 @@ public class GlbBuilder
 				int texIndex = pbr["metallicRoughnessTexture"]!["index"]!.Value<int>();
 				int texCoordSet = pbr["metallicRoughnessTexture"]!["texCoord"]?.Value<int>() ?? 0;
 				string mostLikelyMatch = "";
-				if (texIndex >= 0 && texIndex < imagesJson.Count)
+				if (texIndex >= 0 && texIndex < imgJson.Count)
 				{
-					if (imagesJson[texIndex]["uri"] != null)
+					string imgUri = imgJson[texJson[texIndex]["extensions"]!["MSFT_texture_dds"]!["source"]!.Value<int>()]["uri"]!.Value<string>() ?? "";
+					if (imgUri != null)
 					{
-						string[] imageMatches = [.. Directory.GetFiles(sourcePath, "*", SearchOption.AllDirectories).Where(f => string.Equals(Path.GetFileName(f), imagesJson[texIndex]["uri"]!.Value<string>(), StringComparison.OrdinalIgnoreCase))];
+						string[] imageMatches = [.. Directory.GetFiles(srcPath, "*", SearchOption.AllDirectories).Where(f => string.Equals(Path.GetFileName(f), imgUri, StringComparison.OrdinalIgnoreCase))];
 						int mostLikelyMatchScore = -1;
 						foreach (string match in imageMatches)
 						{
@@ -249,25 +252,63 @@ public class GlbBuilder
 					}
 
 
-					material.UseChannel(KnownChannel.MetallicRoughness)
+					if (!string.IsNullOrEmpty(mostLikelyMatch))
+					{
+						material.UseChannel(KnownChannel.MetallicRoughness)
+							.UseTexture()
+							.WithPrimaryImage(mostLikelyMatch)
+							.WithCoordinateSet(texCoordSet);
+					}
+				}
+			}
+		}
+		if (matJson["normalTexture"] != null)
+		{
+			int texIndex = matJson["normalTexture"]!["index"]!.Value<int>();
+			int texCoordSet = matJson["normalTexture"]!["texCoord"]?.Value<int>() ?? 0;
+			string mostLikelyMatch = "";
+			if (texIndex >= 0 && texIndex < imgJson.Count)
+			{
+				string imgUri = imgJson[texJson[texIndex]["extensions"]!["MSFT_texture_dds"]!["source"]!.Value<int>()]["uri"]!.Value<string>() ?? "";
+				if (imgUri != null)
+				{
+					string[] imageMatches = [.. Directory.GetFiles(srcPath, "*", SearchOption.AllDirectories).Where(f => string.Equals(Path.GetFileName(f), imgUri, StringComparison.OrdinalIgnoreCase))];
+					int mostLikelyMatchScore = -1;
+					foreach (string match in imageMatches)
+					{
+						int i = 0;
+
+						while (i < Math.Min(match.Length, sourceBgl.Length) && match[i] == sourceBgl[i])
+							i++;
+
+						if (i > mostLikelyMatchScore)
+						{
+							mostLikelyMatchScore = i;
+							mostLikelyMatch = match;
+						}
+					}
+				}
+
+				if (!string.IsNullOrEmpty(mostLikelyMatch))
+				{
+					material.UseChannel(KnownChannel.Normal)
 						.UseTexture()
 						.WithPrimaryImage(mostLikelyMatch)
 						.WithCoordinateSet(texCoordSet);
 				}
 			}
 		}
-		if (materialJson["normalTexture"] != null)
+		if (matJson["occlusionTexture"] != null)
 		{
-			int texIndex = materialJson["normalTexture"]!["index"]!.Value<int>();
-			int texCoordSet = materialJson["normalTexture"]!["texCoord"]?.Value<int>() ?? 0;
+			int texIndex = matJson["occlusionTexture"]!["index"]!.Value<int>();
+			int texCoordSet = matJson["occlusionTexture"]!["texCoord"]?.Value<int>() ?? 0;
 			string mostLikelyMatch = "";
-			if (texIndex >= 0 && texIndex < imagesJson.Count)
+			if (texIndex >= 0 && texIndex < imgJson.Count)
 			{
-				if (imagesJson[texIndex]["uri"] != null)
+				string imgUri = imgJson[texJson[texIndex]["extensions"]!["MSFT_texture_dds"]!["source"]!.Value<int>()]["uri"]!.Value<string>() ?? "";
+				if (imgUri != null)
 				{
-					// TODO: This method doesn't work properly in all conditions. For example, if the names of one file is a superstring of the other, it may pick the wrong one.
-					// This may be a job for a regex to handle.
-					string[] imageMatches = [.. Directory.GetFiles(sourcePath, "*", SearchOption.AllDirectories).Where(f => string.Equals(Path.GetFileName(f), imagesJson[texIndex]["uri"]!.Value<string>(), StringComparison.OrdinalIgnoreCase))];
+					string[] imageMatches = [.. Directory.GetFiles(srcPath, "*", SearchOption.AllDirectories).Where(f => string.Equals(Path.GetFileName(f), imgUri, StringComparison.OrdinalIgnoreCase))];
 					int mostLikelyMatchScore = -1;
 					foreach (string match in imageMatches)
 					{
@@ -284,24 +325,26 @@ public class GlbBuilder
 					}
 				}
 
-
-				material.UseChannel(KnownChannel.Normal)
-					.UseTexture()
-					.WithPrimaryImage(mostLikelyMatch)
-					.WithCoordinateSet(texCoordSet);
+				if (!string.IsNullOrEmpty(mostLikelyMatch))
+				{
+					material.UseChannel(KnownChannel.Occlusion)
+						.UseTexture()
+						.WithPrimaryImage(mostLikelyMatch)
+						.WithCoordinateSet(texCoordSet);
+				}
 			}
 		}
-		if (materialJson["occlusionTexture"] != null)
+		if (matJson["emissiveTexture"] != null)
 		{
-			int texIndex = materialJson["occlusionTexture"]!["index"]!.Value<int>();
-			int texCoordSet = materialJson["occlusionTexture"]!["texCoord"]?.Value<int>() ?? 0;
+			int texIndex = matJson["emissiveTexture"]!["index"]!.Value<int>();
+			int texCoordSet = matJson["emissiveTexture"]!["texCoord"]?.Value<int>() ?? 0;
 			string mostLikelyMatch = "";
-			if (texIndex >= 0 && texIndex < imagesJson.Count)
+			if (texIndex >= 0 && texIndex < imgJson.Count)
 			{
-				if (imagesJson[texIndex]["uri"] != null)
+				string imgUri = imgJson[texJson[texIndex]["extensions"]!["MSFT_texture_dds"]!["source"]!.Value<int>()]["uri"]!.Value<string>() ?? "";
+				if (imgUri != null)
 				{
-					Console.WriteLine($"Occlusion texture found: {imagesJson[texIndex]["uri"]!.Value<string>()!}");
-					string[] imageMatches = [.. Directory.GetFiles(sourcePath, "*", SearchOption.AllDirectories).Where(f => string.Equals(Path.GetFileName(f), imagesJson[texIndex]["uri"]!.Value<string>(), StringComparison.OrdinalIgnoreCase))];
+					string[] imageMatches = [.. Directory.GetFiles(srcPath, "*", SearchOption.AllDirectories).Where(f => string.Equals(Path.GetFileName(f), imgUri, StringComparison.OrdinalIgnoreCase))];
 					int mostLikelyMatchScore = -1;
 					foreach (string match in imageMatches)
 					{
@@ -318,62 +361,32 @@ public class GlbBuilder
 					}
 				}
 
-				material.UseChannel(KnownChannel.Occlusion)
-					.UseTexture()
-					.WithPrimaryImage(mostLikelyMatch)
-					.WithCoordinateSet(texCoordSet);
-			}
-		}
-		if (materialJson["emissiveTexture"] != null)
-		{
-			int texIndex = materialJson["emissiveTexture"]!["index"]!.Value<int>();
-			int texCoordSet = materialJson["emissiveTexture"]!["texCoord"]?.Value<int>() ?? 0;
-			string mostLikelyMatch = "";
-			if (texIndex >= 0 && texIndex < imagesJson.Count)
-			{
-				if (imagesJson[texIndex]["uri"] != null)
+				if (!string.IsNullOrEmpty(mostLikelyMatch))
 				{
-					string[] imageMatches = [.. Directory.GetFiles(sourcePath, "*", SearchOption.AllDirectories).Where(f => string.Equals(Path.GetFileName(f), imagesJson[texIndex]["uri"]!.Value<string>(), StringComparison.OrdinalIgnoreCase))];
-					int mostLikelyMatchScore = -1;
-					foreach (string match in imageMatches)
-					{
-						int i = 0;
-
-						while (i < Math.Min(match.Length, sourceBgl.Length) && match[i] == sourceBgl[i])
-							i++;
-
-						if (i > mostLikelyMatchScore)
-						{
-							mostLikelyMatchScore = i;
-							mostLikelyMatch = match;
-						}
-					}
+					material.UseChannel(KnownChannel.Emissive)
+						.UseTexture()
+						.WithPrimaryImage(mostLikelyMatch)
+						.WithCoordinateSet(texCoordSet);
 				}
-
-
-				material.UseChannel(KnownChannel.Emissive)
-					.UseTexture()
-					.WithPrimaryImage(mostLikelyMatch)
-					.WithCoordinateSet(texCoordSet);
 			}
 		}
-		if (materialJson["emissiveFactor"] != null)
+		if (matJson["emissiveFactor"] != null)
 		{
-			JArray emissiveFactor = (JArray)materialJson["emissiveFactor"]!;
+			JArray emissiveFactor = (JArray)matJson["emissiveFactor"]!;
 			material.WithEmissive(new Vector3(emissiveFactor[0].Value<float>(),
 											  emissiveFactor[1].Value<float>(),
 											  emissiveFactor[2].Value<float>()));
 		}
-		if (materialJson["alphaMode"] != null)
+		if (matJson["alphaMode"] != null)
 		{
-			string alphaMode = materialJson["alphaMode"]!.Value<string>()!;
+			string alphaMode = matJson["alphaMode"]!.Value<string>()!;
 			if (alphaMode == "BLEND")
 			{
 				material.WithAlpha(AlphaMode.BLEND);
 			}
 			else if (alphaMode == "MASK")
 			{
-				float alphaCutoff = materialJson["alphaCutoff"]?.Value<float>() ?? 0.5f;
+				float alphaCutoff = matJson["alphaCutoff"]?.Value<float>() ?? 0.5f;
 				material.WithAlpha(AlphaMode.MASK, alphaCutoff);
 			}
 			else
@@ -381,7 +394,7 @@ public class GlbBuilder
 				material.WithAlpha(AlphaMode.OPAQUE);
 			}
 		}
-		material.DoubleSided = materialJson["doubleSided"]?.Value<bool>() ?? false;
+		material.DoubleSided = matJson["doubleSided"]?.Value<bool>() ?? false;
 		// Additional material properties can be set here based on the glTF material definition
 		return material;
 	}
